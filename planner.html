@@ -78,6 +78,12 @@ main{max-width:640px;margin:0 auto;padding:16px 16px 90px;}
 .sheet-wrap.open{display:flex;}
 .sheet{background:var(--card);width:100%;max-height:88vh;overflow-y:auto;border-radius:16px 16px 0 0;padding:18px 18px calc(24px + env(safe-area-inset-bottom,0px));}
 .sheet h2{margin:0 0 14px;font-size:18px;}
+.step{display:none;}
+.step.active{display:block;}
+@media (min-width: 700px){
+  .sheet-wrap{align-items:stretch;justify-content:flex-end;}
+  .sheet{width:400px;max-width:90vw;height:100%;max-height:100vh;border-radius:16px 0 0 16px;}
+}
 label{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin:12px 0 5px;}
 input[type=text],input[type=date],input[type=number],select{width:100%;font:inherit;font-size:14px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);}
 .row2{display:flex;gap:10px;}
@@ -134,6 +140,7 @@ input[type=text],input[type=date],input[type=number],select{width:100%;font:inhe
     <button data-view="today" class="active">Today</button>
     <button data-view="later">Later</button>
     <button data-view="all">All tasks</button>
+    <button id="exportBtn" title="Download all tasks as CSV" style="margin-left:auto">⬇ CSV</button>
   </nav>
 </header>
 <main id="main"></main>
@@ -141,90 +148,107 @@ input[type=text],input[type=date],input[type=number],select{width:100%;font:inhe
 
 <div class="sheet-wrap" id="sheetWrap">
   <div class="sheet">
-    <h2 id="sheetTitle">New task</h2>
-    <label>Title</label>
-    <input type="text" id="f-title" placeholder="What needs doing?">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 id="sheetTitle">New task</h2>
+      <button class="edit-btn" id="cancelBtn">Cancel</button>
+    </div>
+    <div class="hint" id="stepProgress" style="margin:-8px 0 10px"></div>
 
-    <label>Type</label>
-    <div class="seg" id="f-type">
-      <button data-v="personal" class="on">Personal</button>
-      <button data-v="work">Work</button>
+    <div class="step" data-step="1">
+      <label>Title</label>
+      <input type="text" id="f-title" placeholder="What needs doing?">
     </div>
 
-    <div id="f-projectWrap" style="display:none">
-      <label>Project</label>
-      <input type="text" id="f-project" placeholder="e.g. Open standaarden gemeenten" list="projList">
-      <datalist id="projList"></datalist>
-    </div>
-
-    <label>Priority</label>
-    <div class="seg" id="f-priority">
-      <button data-v="high">High</button>
-      <button data-v="medium" class="on">Medium</button>
-      <button data-v="low">Low</button>
-    </div>
-
-    <label>Task length</label>
-    <div class="seg" id="f-kind">
-      <button data-v="single" class="on">One day</button>
-      <button data-v="multi">Multi-day</button>
-    </div>
-
-    <div class="checkbox-row"><input type="checkbox" id="f-later"><label style="margin:0" for="f-later">I'll plan the date(s) later</label></div>
-
-    <div id="f-dateFields">
-      <div id="f-singleDate">
-        <label>Planned date</label>
-        <input type="date" id="f-planned">
+    <div class="step" data-step="2">
+      <label>Type</label>
+      <div class="seg" id="f-type">
+        <button data-v="personal" class="on">Personal</button>
+        <button data-v="work">Work</button>
       </div>
-      <div id="f-multiDates" class="row2" style="display:none">
-        <div><label>Start</label><input type="date" id="f-start"></div>
-        <div><label>End</label><input type="date" id="f-end"></div>
+      <div id="f-projectWrap" style="display:none">
+        <label>Project</label>
+        <input type="text" id="f-project" placeholder="e.g. Open standaarden gemeenten" list="projList">
+        <datalist id="projList"></datalist>
       </div>
     </div>
 
-    <label>Due date (optional)</label>
-    <input type="date" id="f-due">
-
-    <label>Repeats</label>
-    <div class="seg" id="f-recurFreq">
-      <button data-v="none" class="on">Never</button>
-      <button data-v="days">Every X days</button>
-      <button data-v="weekly">Weekly</button>
-      <button data-v="monthly">Monthly</button>
+    <div class="step" data-step="3">
+      <label>Priority</label>
+      <div class="seg" id="f-priority">
+        <button data-v="high">High</button>
+        <button data-v="medium" class="on">Medium</button>
+        <button data-v="low">Low</button>
+      </div>
     </div>
-    <div id="f-recurExtra" style="display:none">
-      <div class="row2">
-        <div><label id="f-intervalLabel">Every</label><input type="number" id="f-interval" min="1" value="1"></div>
-        <div id="f-modeWrap">
-          <label>Base next one on</label>
-          <div class="seg" id="f-recurMode">
-            <button data-v="completion" class="on">Completion date</button>
-            <button data-v="fixed">Fixed schedule</button>
+
+    <div class="step" data-step="4">
+      <label>Task length</label>
+      <div class="seg" id="f-kind">
+        <button data-v="single" class="on">One day</button>
+        <button data-v="multi">Multi-day</button>
+      </div>
+      <div class="checkbox-row"><input type="checkbox" id="f-later"><label style="margin:0" for="f-later">I'll plan the date(s) later</label></div>
+      <div id="f-dateFields">
+        <div id="f-singleDate">
+          <label>Planned date</label>
+          <input type="date" id="f-planned">
+        </div>
+        <div id="f-multiDates" class="row2" style="display:none">
+          <div><label>Start</label><input type="date" id="f-start"></div>
+          <div><label>End</label><input type="date" id="f-end"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step" data-step="5">
+      <label>Due date (optional)</label>
+      <input type="date" id="f-due">
+    </div>
+
+    <div class="step" data-step="6">
+      <label>Repeats</label>
+      <div class="seg" id="f-recurFreq">
+        <button data-v="none" class="on">Never</button>
+        <button data-v="days">Every X days</button>
+        <button data-v="weekly">Weekly</button>
+        <button data-v="monthly">Monthly</button>
+      </div>
+      <div id="f-recurExtra" style="display:none">
+        <div class="row2">
+          <div><label id="f-intervalLabel">Every</label><input type="number" id="f-interval" min="1" value="1"></div>
+          <div id="f-modeWrap">
+            <label>Base next one on</label>
+            <div class="seg" id="f-recurMode">
+              <button data-v="completion" class="on">Completion date</button>
+              <button data-v="fixed">Fixed schedule</button>
+            </div>
           </div>
         </div>
-      </div>
-      <div id="f-weekdayWrap" style="display:none">
-        <label>Day of the week</label>
-        <div class="seg" id="f-weekday">
-          <button data-v="1">Mon</button><button data-v="2">Tue</button><button data-v="3">Wed</button>
-          <button data-v="4">Thu</button><button data-v="5">Fri</button><button data-v="6">Sat</button><button data-v="0">Sun</button>
+        <div id="f-weekdayWrap" style="display:none">
+          <label>Day of the week</label>
+          <div class="seg" id="f-weekday">
+            <button data-v="1">Mon</button><button data-v="2">Tue</button><button data-v="3">Wed</button>
+            <button data-v="4">Thu</button><button data-v="5">Fri</button><button data-v="6">Sat</button><button data-v="0">Sun</button>
+          </div>
         </div>
+        <div id="f-monthdayWrap" style="display:none">
+          <label>Day of the month</label>
+          <input type="number" id="f-monthday" min="1" max="31" value="1">
+        </div>
+        <div class="hint" id="f-recurHint"></div>
       </div>
-      <div id="f-monthdayWrap" style="display:none">
-        <label>Day of the month</label>
-        <input type="number" id="f-monthday" min="1" max="31" value="1">
-      </div>
-      <div class="hint" id="f-recurHint"></div>
     </div>
 
-    <label>Labels</label>
-    <input type="text" id="f-labels" placeholder="Add new labels, comma-separated">
-    <div class="label-chips" id="f-labelChips"></div>
+    <div class="step" data-step="7">
+      <label>Labels</label>
+      <input type="text" id="f-labels" placeholder="Add new labels, comma-separated">
+      <div class="label-chips" id="f-labelChips"></div>
+    </div>
 
     <div class="sheet-actions">
-      <button class="btn-cancel" id="cancelBtn">Cancel</button>
-      <button class="btn-save" id="saveBtn">Save task</button>
+      <button class="btn-cancel" id="backBtn">Back</button>
+      <button class="btn-save" id="nextBtn">Next</button>
+      <button class="btn-save" id="saveBtn" style="display:none">Save task</button>
     </div>
   </div>
 </div>
@@ -428,8 +452,8 @@ function taskCard(t){
   if(t.kind==='multi' && !t.done){
     if(t.start && t.end){
       const wrap = document.createElement('div'); wrap.className='multi-days';
-      let d = t.start;
-      while(d<=t.end){
+      let d = t.start; let guard=0;
+      while(d<=t.end && guard<370){ guard++;
         const b = document.createElement('button');
         b.className='day'+((t.loggedDays||[]).includes(d)?' on':'')+(d===todayStr()?' today':'');
         b.textContent = d.slice(8,10); b.title = d;
@@ -479,7 +503,28 @@ function render(){
   } else { list.forEach(t=>main.append(taskCard(t))); }
 }
 
-document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{ view=b.dataset.view; render(); });
+document.querySelectorAll('nav button[data-view]').forEach(b=>b.onclick=()=>{ view=b.dataset.view; render(); });
+
+function csvEscape(v){ v = (v===null||v===undefined) ? '' : String(v); return '"'+v.replace(/"/g,'""')+'"'; }
+document.getElementById('exportBtn').onclick = ()=>{
+  const cols = ['title','type','project','priority','kind','planned','start','end','due','recur_summary','labels','done','completedAt'];
+  const rows = [cols.join(',')];
+  tasks.forEach(t=>{
+    rows.push([
+      csvEscape(t.title), csvEscape(t.type), csvEscape(t.project),
+      csvEscape(t.priority), csvEscape(t.kind), csvEscape(t.planned),
+      csvEscape(t.start), csvEscape(t.end), csvEscape(t.due),
+      csvEscape(recurLabel(t)), csvEscape((t.labels||[]).join('; ')),
+      csvEscape(t.done), csvEscape(t.completedAt)
+    ].join(','));
+  });
+  const blob = new Blob([rows.join('\n')], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'hoekie-tasks-'+todayStr()+'.csv';
+  document.body.append(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+};
 
 const sheetWrap = document.getElementById('sheetWrap');
 function seg(id,val){ document.querySelectorAll('#'+id+' button').forEach(b=>b.classList.toggle('on', b.dataset.v===val)); }
@@ -524,6 +569,7 @@ document.getElementById('f-weekday') && document.getElementById('f-weekday').add
 document.getElementById('f-monthday') && document.getElementById('f-monthday').addEventListener('input', updateRecurVisibility);
 
 function openSheet(task){
+  showStep(1);
   editingId = task ? task.id : null;
   document.getElementById('sheetTitle').textContent = task ? 'Edit task' : 'New task';
   document.getElementById('f-title').value = task ? task.title : '';
@@ -562,6 +608,21 @@ function renderLabelChips(){
   });
 }
 document.getElementById('addBtn').onclick = ()=>openSheet(null);
+const TOTAL_STEPS = 7;
+let currentStep = 1;
+function showStep(n){
+  currentStep = n;
+  document.querySelectorAll('.step').forEach(s=>s.classList.toggle('active', parseInt(s.dataset.step)===n));
+  document.getElementById('stepProgress').textContent = 'Step '+n+' of '+TOTAL_STEPS;
+  document.getElementById('backBtn').style.display = n===1 ? 'none':'block';
+  document.getElementById('nextBtn').style.display = n===TOTAL_STEPS ? 'none':'block';
+  document.getElementById('saveBtn').style.display = n===TOTAL_STEPS ? 'block':'none';
+}
+document.getElementById('nextBtn').onclick = ()=>{
+  if(currentStep===1 && !document.getElementById('f-title').value.trim()){ document.getElementById('f-title').focus(); return; }
+  if(currentStep<TOTAL_STEPS) showStep(currentStep+1);
+};
+document.getElementById('backBtn').onclick = ()=>{ if(currentStep>1) showStep(currentStep-1); };
 document.getElementById('cancelBtn').onclick = ()=> sheetWrap.classList.remove('open');
 sheetWrap.onclick = (e)=>{ if(e.target.id==='sheetWrap') sheetWrap.classList.remove('open'); };
 
@@ -579,14 +640,18 @@ document.getElementById('saveBtn').onclick = ()=>{
     weekday: parseInt(segVal('f-weekday')), monthDay: Math.min(31, Math.max(1, parseInt(document.getElementById('f-monthday').value)||1))
   };
 
+  let startVal = (kind==='multi' && !later) ? document.getElementById('f-start').value : null;
+  let endVal = (kind==='multi' && !later) ? document.getElementById('f-end').value : null;
+  if(startVal && endVal && endVal < startVal){ const tmp=startVal; startVal=endVal; endVal=tmp; }
+
   const data = {
     title, type,
     project: type==='work' ? document.getElementById('f-project').value.trim() : null,
     priority: segVal('f-priority'),
     kind,
     planned: (kind==='single' && !later) ? document.getElementById('f-planned').value : null,
-    start: (kind==='multi' && !later) ? document.getElementById('f-start').value : null,
-    end: (kind==='multi' && !later) ? document.getElementById('f-end').value : null,
+    start: startVal,
+    end: endVal,
     due: document.getElementById('f-due').value || null,
     recur, labels
   };
