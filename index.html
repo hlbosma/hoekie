@@ -7,37 +7,18 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Libre+Franklin:wght@400;500;600&display=swap" rel="stylesheet">
-<!-- Firebase: these three libraries give us user accounts (auth) and a cloud database (firestore) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.3.0/firebase-app-compat.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.3.0/firebase-auth-compat.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.3.0/firebase-firestore-compat.min.js"></script>
 <style>
-/* ============ COLOR PALETTE ============
-   Base colors (background/text/borders) are the original neutral cream
-   theme. Hanne's 12-color palette is used ONLY as accent colors, on
-   things like priority tags, type labels and badges - not as large
-   background fills, since bright color everywhere was overwhelming. */
 :root{
-  --paper:#F6F3EC;      /* page background - restored neutral cream */
-  --card:#FFFFFF;        /* surface behind cards, the sheet, etc. */
-  --line:#DCD5C7;        /* borders / dividers */
-  --ink:#22303A;         /* main text */
-  --ink-soft:#5B6B72;    /* secondary text, muted borders */
-
-  /* --- accent colors, from Hanne's palette, used only for small tags/badges --- */
-  --personal:#849E15;    /* "Personal" task type */
-  --work:#6777B6;        /* "Work" task type */
-  --someday:#B28622;     /* "Someday" task type (the parking-lot type) */
-  --pr-high:#D8560E;     /* "ASAP" priority */
-  --pr-medium:#E1903E;   /* "Soon" priority */
-  --pr-low:#CBD183;      /* "Later" priority */
-  --accent:#D17089;      /* labels */
-  --inprogress:#92A2A6;  /* "in progress" badge */
-  --quick:#F8CABA;       /* "quick task" badge */
-  /* Spare/unused from the given palette, in case you want them for
-     something later: #D3C2CD, #EFCE7B, #2B2B23 */
-
-  --radius:10px;
+  --paper:#F6F3EC; --card:#FFFFFF; --line:#DCD5C7;
+  --ink:#22303A; --ink-soft:#5B6B72;
+  --personal:#849E15; --work:#6777B6; --someday:#B28622;
+  --pr-high:#D8560E; --pr-medium:#E1903E; --pr-low:#CBD183;
+  --accent:#D17089; --inprogress:#92A2A6; --quick:#F8CABA;
+  /* Spare from the given palette: #D3C2CD, #EFCE7B, #2B2B23 */
+  --radius:20px; /* one shared corner radius, used almost everywhere for a consistent look */
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
@@ -50,15 +31,15 @@ h1,h2,.brand{font-family:'Space Grotesk',sans-serif;}
 header{position:sticky;top:0;padding:calc(14px + env(safe-area-inset-top,0px)) 16px 12px;background:var(--paper);border-bottom:1px solid var(--line);z-index:5;}
 .brand{font-size:20px;font-weight:700;margin:0 0 10px;}
 nav{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
-nav button{font:inherit;font-weight:600;font-size:13px;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);padding:7px 12px;border-radius:20px;cursor:pointer;}
+nav button{font:inherit;font-weight:600;font-size:13px;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);padding:7px 12px;border-radius:var(--radius);cursor:pointer;}
 nav button.active{background:var(--ink);color:var(--paper);border-color:var(--ink);}
 .nav-right{margin-left:auto;display:flex;gap:6px;}
-.icon-btn{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);padding:7px 10px;border-radius:20px;cursor:pointer;}
+.icon-btn{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);padding:7px 10px;border-radius:var(--radius);cursor:pointer;}
 
 main{max-width:920px;margin:0 auto;padding:16px 16px 90px;}
 
 .filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
-.chip{font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);padding:5px 10px;border-radius:14px;cursor:pointer;}
+.chip{font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);padding:5px 10px;border-radius:var(--radius);cursor:pointer;}
 .chip.on{background:var(--ink);color:var(--paper);border-color:var(--ink);}
 .empty{color:var(--ink-soft);font-size:13px;padding:8px 0;text-align:center;opacity:.7;}
 
@@ -69,60 +50,57 @@ main{max-width:920px;margin:0 auto;padding:16px 16px 90px;}
 @media (max-width:760px){ .type-columns{grid-template-columns:1fr;} }
 .type-col-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;}
 
-.task{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:11px 13px;margin-bottom:8px;}
+/* Task cards get a colored left-leaning outline based on priority, and
+   the round checkbox is outlined in the task's TYPE color - so at a
+   glance, color tells you both "how urgent" (card) and "what kind" (dot). */
+.task{background:var(--card);border:2px solid var(--line);border-radius:var(--radius);padding:11px 13px;margin-bottom:8px;}
 .task-top{display:flex;align-items:flex-start;gap:9px;}
-.check{width:20px;height:20px;border-radius:50%;border:2px solid var(--ink-soft);flex:none;margin-top:1px;cursor:pointer;background:none;color:transparent;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;}
-.check.done{background:var(--ink);border-color:var(--ink);color:var(--paper);}
+.check{width:20px;height:20px;border-radius:50%;border:2.5px solid var(--ink-soft);flex:none;margin-top:1px;cursor:pointer;background:none;color:transparent;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;}
+.check.done{background:var(--ink);border-color:var(--ink) !important;color:var(--paper);}
 .task-title{font-weight:600;font-size:14px;flex:1;line-height:1.3;}
 .task-title.done{text-decoration:line-through;color:var(--ink-soft);}
 .edit-btn{background:none;border:none;color:var(--ink-soft);font-size:11px;font-weight:600;cursor:pointer;padding:2px 4px;text-decoration:underline;flex:none;}
 .meta{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;font-size:10px;}
-.tag{padding:3px 7px;border-radius:8px;font-weight:700;background:var(--paper);border:1px solid var(--line);}
-.tag.work{color:var(--work);}
-.tag.pr-high{color:var(--pr-high);}
-.tag.pr-medium{color:var(--pr-medium);}
-.tag.pr-low{color:var(--pr-low);}
+.tag{padding:3px 8px;border-radius:var(--radius);font-weight:700;background:var(--paper);border:1px solid var(--line);}
 .tag.plain{color:var(--ink-soft);}
-.tag.label{color:var(--accent);}
 .tag.inprog{color:var(--inprogress);}
 .tag.quick{color:var(--quick);}
 .task-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
-.plan-btn{font-size:11px;font-weight:600;background:none;border:1px solid var(--ink-soft);color:var(--ink-soft);padding:4px 9px;border-radius:8px;cursor:pointer;}
+.plan-btn{font-size:11px;font-weight:600;background:none;border:1px solid var(--ink-soft);color:var(--ink-soft);padding:4px 10px;border-radius:var(--radius);cursor:pointer;}
 .plan-btn.active{border-color:var(--inprogress);color:var(--inprogress);}
-.finish-btn{font-size:11px;font-weight:600;background:var(--ink);color:var(--paper);border:none;padding:6px 12px;border-radius:8px;cursor:pointer;}
+.finish-btn{font-size:11px;font-weight:600;background:var(--ink);color:var(--paper);border:none;padding:6px 12px;border-radius:var(--radius);cursor:pointer;}
+.skip-row{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap;}
+.skip-row input{flex:1;min-width:120px;}
 
 .fab{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom,0px));width:54px;height:54px;border-radius:50%;background:var(--ink);color:var(--paper);font-size:26px;border:none;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.25);}
 .fab-quick{position:fixed;right:22px;bottom:calc(82px + env(safe-area-inset-bottom,0px));width:42px;height:42px;border-radius:50%;background:var(--work);color:#fff;font-size:17px;border:none;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.2);}
 
 .sheet-wrap{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:flex-end;z-index:20;}
 .sheet-wrap.open{display:flex;}
-.sheet{background:var(--card);width:100%;max-height:88vh;overflow-y:auto;border-radius:16px 16px 0 0;padding:18px 18px calc(24px + env(safe-area-inset-bottom,0px));}
+.sheet{background:var(--card);width:100%;max-height:88vh;overflow-y:auto;border-radius:var(--radius) var(--radius) 0 0;padding:18px 18px calc(24px + env(safe-area-inset-bottom,0px));}
 .sheet h2{margin:0 0 14px;font-size:18px;}
 .step{display:none;}
 .step.active{display:block;}
 @media (min-width: 700px){
   .sheet-wrap{align-items:stretch;justify-content:flex-end;}
-  .sheet{width:400px;max-width:90vw;height:100%;max-height:100vh;border-radius:16px 0 0 16px;}
+  .sheet{width:400px;max-width:90vw;height:100%;max-height:100vh;border-radius:var(--radius) 0 0 var(--radius);}
 }
 label{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin:12px 0 5px;}
-input[type=text],input[type=date],input[type=number],input[type=password]{width:100%;font:inherit;font-size:14px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);}
+input[type=text],input[type=date],input[type=number],input[type=password]{width:100%;font:inherit;font-size:14px;padding:9px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--paper);color:var(--ink);}
+input[type=color]{width:40px;height:36px;padding:2px;border:1px solid var(--line);border-radius:var(--radius);background:var(--paper);cursor:pointer;}
 .row2{display:flex;gap:10px;}
 .row2>*{flex:1;}
 .seg{display:flex;gap:6px;flex-wrap:wrap;}
-.seg button{flex:1;min-width:64px;font:inherit;font-size:13px;font-weight:600;padding:8px;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);border-radius:8px;cursor:pointer;}
+.seg button{flex:1;min-width:64px;font:inherit;font-size:13px;font-weight:600;padding:8px;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);border-radius:var(--radius);cursor:pointer;}
 .seg button.on{background:var(--ink);color:var(--paper);border-color:var(--ink);}
 .checkbox-row{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:var(--ink-soft);}
 .checkbox-row input{width:16px;height:16px;}
-/* Back/Next/Save are styled very differently from each other and from the
-   option buttons above, on purpose, so they're never confused for options:
-   Back = plain text link, Next = filled pill in the "work" accent color,
-   Save = filled pill in dark ink. */
 .sheet-actions{display:flex;align-items:center;gap:10px;margin-top:18px;}
 #backBtn{flex:none;background:none;border:none;color:var(--ink-soft);font-weight:700;font-size:14px;padding:11px 4px;cursor:pointer;}
-#nextBtn{flex:1;background:var(--work);color:#fff;border:none;border-radius:24px;padding:12px;font-weight:700;font-size:14px;cursor:pointer;}
-#saveBtn{flex:1;background:var(--ink);color:var(--paper);border:none;border-radius:24px;padding:12px;font-weight:700;font-size:14px;cursor:pointer;}
+#nextBtn{flex:1;background:var(--work);color:#fff;border:none;border-radius:var(--radius);padding:12px;font-weight:700;font-size:14px;cursor:pointer;}
+#saveBtn{flex:1;background:var(--ink);color:var(--paper);border:none;border-radius:var(--radius);padding:12px;font-weight:700;font-size:14px;cursor:pointer;}
 .chip-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
-.pick-chip{font-size:12px;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);padding:4px 9px;border-radius:12px;cursor:pointer;}
+.pick-chip{font-size:12px;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);padding:4px 10px;border-radius:var(--radius);cursor:pointer;}
 .pick-chip.on{background:var(--accent);color:#fff;border-color:var(--accent);}
 .hint{font-size:11px;color:var(--ink-soft);margin-top:6px;}
 
@@ -131,14 +109,20 @@ input[type=text],input[type=date],input[type=number],input[type=password]{width:
 .auth-box .brand{font-size:24px;margin-bottom:4px;}
 .auth-box p{color:var(--ink-soft);font-size:13px;margin:0 0 18px;}
 .auth-error{color:var(--pr-high);font-size:12px;margin-top:8px;min-height:14px;}
-.setup-banner{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:14px;}
-.setup-banner code{background:rgba(0,0,0,.06);padding:1px 4px;border-radius:4px;}
+.setup-banner{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;font-size:12px;margin-bottom:14px;}
+.setup-banner code{background:rgba(0,0,0,.06);padding:1px 4px;border-radius:6px;}
 
 .archive-row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:10px 13px;margin-bottom:8px;}
 .archive-row .info{flex:1;min-width:0;}
 .archive-row .title{font-weight:600;font-size:14px;text-decoration:line-through;color:var(--ink-soft);}
 .archive-row .date{font-size:11px;color:var(--ink-soft);}
-.del-btn{font:inherit;font-size:12px;font-weight:700;background:none;border:1px solid var(--pr-high);color:var(--pr-high);padding:5px 10px;border-radius:8px;cursor:pointer;flex:none;}
+.del-btn{font:inherit;font-size:12px;font-weight:700;background:none;border:1px solid var(--pr-high);color:var(--pr-high);padding:5px 10px;border-radius:var(--radius);cursor:pointer;flex:none;}
+
+/* ---- Tags & Projects management page ---- */
+.tp-section{margin-bottom:22px;}
+.tp-section h3{font-size:14px;margin:0 0 10px;}
+.tp-row{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:8px 10px;margin-bottom:8px;}
+.tp-row input[type=text]{flex:1;}
 </style>
 </head>
 <body>
@@ -147,7 +131,7 @@ input[type=text],input[type=date],input[type=number],input[type=password]{width:
   <div class="auth-box">
     <div class="brand">Hoekie</div>
     <div class="setup-banner">No Firebase config found yet, so this copy will only save tasks in this one browser. Fill in <code>FIREBASE_CONFIG</code> near the top of the file's script to turn on cross-device sync.</div>
-    <div class="sheet-actions"><button id="saveBtn2" class="btn-save" style="width:100%;background:var(--ink);color:var(--paper);border:none;border-radius:24px;padding:12px;font-weight:700;cursor:pointer" onclick="document.getElementById('setupScreen').style.display='none'; startApp();">Continue without sync</button></div>
+    <div class="sheet-actions"><button style="width:100%;background:var(--ink);color:var(--paper);border:none;border-radius:var(--radius);padding:12px;font-weight:700;cursor:pointer" onclick="document.getElementById('setupScreen').style.display='none'; startApp();">Continue without sync</button></div>
   </div>
 </div>
 
@@ -160,8 +144,8 @@ input[type=text],input[type=date],input[type=number],input[type=password]{width:
     <label>Password</label>
     <input type="password" id="auth-password" autocomplete="current-password" placeholder="At least 6 characters">
     <div class="sheet-actions">
-      <button id="authSignup" style="flex:1;background:none;border:1px solid var(--line);color:var(--ink-soft);border-radius:24px;padding:12px;font-weight:700;cursor:pointer">Create account</button>
-      <button id="authSignin" style="flex:1;background:var(--ink);color:var(--paper);border:none;border-radius:24px;padding:12px;font-weight:700;cursor:pointer">Sign in</button>
+      <button id="authSignup" style="flex:1;background:none;border:1px solid var(--line);color:var(--ink-soft);border-radius:var(--radius);padding:12px;font-weight:700;cursor:pointer">Create account</button>
+      <button id="authSignin" style="flex:1;background:var(--ink);color:var(--paper);border:none;border-radius:var(--radius);padding:12px;font-weight:700;cursor:pointer">Sign in</button>
     </div>
     <div class="auth-error" id="authError"></div>
   </div>
@@ -174,6 +158,7 @@ input[type=text],input[type=date],input[type=number],input[type=password]{width:
     <button data-view="later">Later</button>
     <button data-view="all">All tasks</button>
     <button data-view="quick">Quick</button>
+    <button data-view="tags">Tags & Projects</button>
     <button data-view="archive">Archive</button>
     <div class="nav-right">
       <button class="icon-btn" id="exportBtn" title="Download all tasks as CSV">⬇ CSV</button>
@@ -185,7 +170,6 @@ input[type=text],input[type=date],input[type=number],input[type=password]{width:
 <button class="fab-quick" id="quickFab" title="Add a quick task">⚡</button>
 <button class="fab" id="addBtn">+</button>
 
-<!-- Minimal quick-add: just a title, nothing else -->
 <div class="sheet-wrap" id="quickWrap">
   <div class="sheet" style="max-width:420px">
     <h2>Quick task</h2>
@@ -193,12 +177,11 @@ input[type=text],input[type=date],input[type=number],input[type=password]{width:
     <input type="text" id="q-title" placeholder="Just the task name for now...">
     <div class="sheet-actions">
       <button id="qCancel" style="flex:none;background:none;border:none;color:var(--ink-soft);font-weight:700;padding:11px 4px;cursor:pointer">Cancel</button>
-      <button id="qSave" style="flex:1;background:var(--work);color:#fff;border:none;border-radius:24px;padding:12px;font-weight:700;cursor:pointer">Add quick task</button>
+      <button id="qSave" style="flex:1;background:var(--work);color:#fff;border:none;border-radius:var(--radius);padding:12px;font-weight:700;cursor:pointer">Add quick task</button>
     </div>
   </div>
 </div>
 
-<!-- The full add/edit task form: a step-by-step wizard, one field group at a time. -->
 <div class="sheet-wrap" id="sheetWrap">
   <div class="sheet">
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -236,9 +219,6 @@ input[type=text],input[type=date],input[type=number],input[type=password]{width:
       </div>
     </div>
 
-    <!-- Dates: a planned date is optional; if set, it can optionally span
-         multiple days by adding an end date. No more separate "single vs
-         multi-day" task type - it's just whether an end date exists. -->
     <div class="step" data-step="4">
       <div class="checkbox-row"><input type="checkbox" id="f-later"><label style="margin:0" for="f-later">I'll plan the date later</label></div>
       <div id="f-dateFields">
@@ -320,20 +300,24 @@ const firebaseConfigured = FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== 
    GLOBAL STATE
    ================================================================ */
 let tasks = [];
+let labelColors = {};   // { "urgent": "#D17089", ... } - custom colors per label
+let projectColors = {}; // { "Website revamp": "#6777B6", ... } - custom colors per project
 let editingId = null;
+let editMode = 'wizard'; // 'wizard' (new task, step by step) or 'flat' (editing, everything at once)
 let selectedLabels = new Set();
 let fsDoc = null;
 let unsub = null;
 let applyingRemote = false;
 let view = 'today';
-let skipOpenId = null; // id of the task currently showing its inline "skip to date" picker
+let skipOpenId = null;
 
 const filters = { project:null, label:null, showDone:false };
-
 const PRIORITY_LABELS = { high:'ASAP', medium:'Soon', low:'Later' };
 const PRIORITY_ORDER = ['high','medium','low'];
 const TYPE_ORDER = ['personal','work','someday'];
 const TYPE_LABELS = { personal:'Personal', work:'Work', someday:'Someday' };
+const DEFAULT_PROJECT_COLOR = '#6777B6';
+const DEFAULT_LABEL_COLOR = '#D17089';
 
 /* ================================================================
    DATE HELPERS
@@ -345,12 +329,7 @@ function addMonths(dateStr, n){ const d=new Date(dateStr+'T00:00:00'); d.setMont
 function daysBetween(a,b){ return Math.round((new Date(b)-new Date(a))/86400000); }
 
 /* ================================================================
-   DATA MIGRATION
-   Older versions of this file stored multi-day tasks differently
-   (a "kind" of single/multi, plus separate start/end fields and a
-   day-by-day checklist). This converts any old-format task to the
-   current shape (planned + optional endDate) the first time it's
-   loaded, so nothing gets lost when this file is updated.
+   DATA MIGRATION - converts old-format tasks to the current shape.
    ================================================================ */
 function migrateTask(t){
   if(t.kind==='multi'){ t.planned = t.start || t.planned || null; t.endDate = t.end || null; }
@@ -363,17 +342,24 @@ function migrateTask(t){
 
 /* ================================================================
    LOADING & SAVING
+   We now save three things together: the tasks, and the custom
+   colors chosen for labels and projects.
    ================================================================ */
-function loadLocal(){ try{ return JSON.parse(localStorage.getItem('vooruit_tasks')||'[]').map(migrateTask); }catch(e){ return []; } }
+function loadLocal(){
+  try{
+    const raw = JSON.parse(localStorage.getItem('vooruit_tasks')||'{}');
+    if(Array.isArray(raw)) return {tasks: raw.map(migrateTask), labelColors:{}, projectColors:{}};
+    return {tasks:(raw.tasks||[]).map(migrateTask), labelColors: raw.labelColors||{}, projectColors: raw.projectColors||{}};
+  }catch(e){ return {tasks:[], labelColors:{}, projectColors:{}}; }
+}
 function persist(){
-  localStorage.setItem('vooruit_tasks', JSON.stringify(tasks));
-  if(fsDoc && !applyingRemote){ fsDoc.set({tasks}).catch(()=>{}); }
+  const payload = {tasks, labelColors, projectColors};
+  localStorage.setItem('vooruit_tasks', JSON.stringify(payload));
+  if(fsDoc && !applyingRemote){ fsDoc.set(payload).catch(()=>{}); }
 }
 function cleanupOldArchive(){
   const cutoff = addDays(todayStr(), -30);
   const before = tasks.length;
-  // Only tasks that are BOTH done AND completed more than 30 days ago are removed.
-  // Anything not done, or done more recently, is always kept.
   tasks = tasks.filter(t => !(t.done && t.completedAt && t.completedAt < cutoff));
   if(tasks.length !== before) persist();
 }
@@ -387,8 +373,11 @@ function watchTasks(userUid){
   fsDoc = firebase.firestore().collection('users').doc(userUid).collection('planner').doc('tasks');
   unsub = fsDoc.onSnapshot(snap=>{
     applyingRemote = true;
-    tasks = ((snap.exists && snap.data().tasks) || []).map(migrateTask);
-    localStorage.setItem('vooruit_tasks', JSON.stringify(tasks));
+    const d = snap.exists ? snap.data() : {};
+    tasks = (d.tasks||[]).map(migrateTask);
+    labelColors = d.labelColors || {};
+    projectColors = d.projectColors || {};
+    localStorage.setItem('vooruit_tasks', JSON.stringify({tasks,labelColors,projectColors}));
     applyingRemote = false;
     cleanupOldArchive();
     render();
@@ -398,7 +387,8 @@ function watchTasks(userUid){
 function authErr(msg){ document.getElementById('authError').textContent = msg; }
 function initApp(){
   if(!firebaseConfigured){
-    tasks = loadLocal();
+    const loaded = loadLocal();
+    tasks = loaded.tasks; labelColors = loaded.labelColors; projectColors = loaded.projectColors;
     document.getElementById('setupScreen').style.display = 'flex';
     return;
   }
@@ -419,7 +409,7 @@ function initApp(){
 }
 
 /* ================================================================
-   RECURRENCE MATH (unchanged logic, just no more kind/start/end)
+   RECURRENCE MATH
    ================================================================ */
 function stepDate(dateStr, freq, interval){
   if(freq==='days') return addDays(dateStr, interval);
@@ -453,8 +443,6 @@ function nextOccurrenceRef(completedAt, recur){
 /* ================================================================
    TASK LOGIC
    ================================================================ */
-// A task counts as "due today" if today falls anywhere between its
-// planned date and its end date (the same date, if there's no end date).
 function isDueTodayOrRange(t){
   if(!t.planned) return false;
   const end = t.endDate || t.planned;
@@ -479,8 +467,6 @@ function completeTask(t){
   }
   persist(); render();
 }
-// Moves a task's planned date to a new date without completing it,
-// keeping the same span length if it had an end date.
 function skipTask(t, newDate){
   const span = t.endDate ? daysBetween(t.planned, t.endDate) : 0;
   t.planned = newDate;
@@ -516,10 +502,12 @@ function recurLabel(t){
    ================================================================ */
 function taskCard(t){
   const div = document.createElement('div'); div.className='task';
+  div.style.borderColor = `var(--pr-${t.priority})`; // priority = card outline color
   const top = document.createElement('div'); top.className='task-top';
 
   const check = document.createElement('button');
   check.className = 'check'+(t.done?' done':'');
+  check.style.borderColor = `var(--${t.type})`; // type = checkbox outline color
   check.textContent = t.done ? '✓' : '';
   check.onclick = ()=>{ if(t.done){ t.done=false; t.completedAt=null; persist(); render(); } else { completeTask(t); } };
 
@@ -532,15 +520,16 @@ function taskCard(t){
   top.append(check, title, editBtn);
   div.append(top);
 
+  const projColor = t.project ? (projectColors[t.project]||DEFAULT_PROJECT_COLOR) : null;
   const meta = document.createElement('div'); meta.className='meta';
   meta.innerHTML =
-    (t.type==='work' && t.project ? `<span class="tag work">${t.project}</span>` : '') +
+    (t.type==='work' && t.project ? `<span class="tag" style="color:${projColor}">${t.project}</span>` : '') +
     (t.due?`<span class="tag plain">Due ${t.due}</span>`:'')+
     (t.planned ? `<span class="tag plain">${t.endDate?(t.planned+' → '+t.endDate):('Planned '+t.planned)}</span>` : `<span class="tag plain">Not scheduled</span>`)+
     (recurLabel(t)?`<span class="tag plain">${recurLabel(t)}</span>`:'')+
     (t.inProgress?`<span class="tag inprog">In progress</span>`:'')+
     (t.quick?`<span class="tag quick">Quick</span>`:'')+
-    (t.labels||[]).map(l=>`<span class="tag label">#${l}</span>`).join('');
+    (t.labels||[]).map(l=>`<span class="tag" style="color:${labelColors[l]||DEFAULT_LABEL_COLOR}">#${l}</span>`).join('');
   div.append(meta);
 
   if(!t.done){
@@ -555,11 +544,13 @@ function taskCard(t){
     div.append(actions);
 
     if(skipOpenId===t.id){
-      const row = document.createElement('div'); row.className='row2'; row.style.marginTop='7px';
+      const row = document.createElement('div'); row.className='skip-row';
+      const tmrw = document.createElement('button'); tmrw.className='plan-btn'; tmrw.textContent='Tomorrow';
+      tmrw.onclick = ()=>{ skipTask(t, addDays(todayStr(),1)); skipOpenId=null; };
       const inp = document.createElement('input'); inp.type='date'; inp.value = t.planned || todayStr();
       const go = document.createElement('button'); go.className='finish-btn'; go.textContent='Move';
       go.onclick = ()=>{ skipTask(t, inp.value); skipOpenId=null; };
-      row.append(inp, go);
+      row.append(tmrw, inp, go);
       div.append(row);
     }
   }
@@ -594,7 +585,6 @@ function renderBoard(main, list){
     main.append(row);
   });
 }
-// Flat list of quick tasks (not yet fleshed out with full details).
 function renderQuick(main){
   const list = tasks.filter(t=>t.quick && !t.done);
   if(list.length===0){ const e=document.createElement('div'); e.className='empty'; e.textContent='No quick tasks waiting - nice and tidy!'; main.append(e); return; }
@@ -610,8 +600,7 @@ function renderArchive(main){
   delAll.textContent = 'Delete all archived tasks';
   delAll.onclick = ()=>{
     if(confirm('Permanently delete all '+done.length+' finished tasks? Unfinished tasks are never affected by this.')){
-      tasks = tasks.filter(t=>!t.done);
-      persist(); render();
+      tasks = tasks.filter(t=>!t.done); persist(); render();
     }
   };
   main.append(delAll);
@@ -623,31 +612,92 @@ function renderArchive(main){
     const info = document.createElement('div'); info.className='info';
     info.innerHTML = `<div class="title">${t.title}</div><div class="date">Finished ${t.completedAt}</div>`;
     const del = document.createElement('button'); del.className='del-btn'; del.textContent='Delete';
-    del.onclick = ()=>{
-      if(confirm('Delete "'+t.title+'" permanently?')){ tasks = tasks.filter(x=>x.id!==t.id); persist(); render(); }
-    };
+    del.onclick = ()=>{ if(confirm('Delete "'+t.title+'" permanently?')){ tasks = tasks.filter(x=>x.id!==t.id); persist(); render(); } };
     row.append(info, del);
     main.append(row);
   });
 }
+
+/* Tags & Projects management page: rename, recolor, or delete any
+   label or project. Renaming/recoloring updates every task that uses
+   it; deleting removes it from every task that uses it. */
+function renderTags(main){
+  const projSection = document.createElement('div'); projSection.className='tp-section';
+  projSection.innerHTML = '<h3>Projects</h3>';
+  const projects = projectList();
+  if(projects.length===0){ const e=document.createElement('div'); e.className='empty'; e.textContent='No projects yet - add one from a work task.'; projSection.append(e); }
+  projects.forEach(p=>{
+    const row = document.createElement('div'); row.className='tp-row';
+    const nameInput = document.createElement('input'); nameInput.type='text'; nameInput.value=p;
+    const colorInput = document.createElement('input'); colorInput.type='color'; colorInput.value = projectColors[p]||DEFAULT_PROJECT_COLOR;
+    const saveBtn = document.createElement('button'); saveBtn.className='plan-btn'; saveBtn.textContent='Save';
+    saveBtn.onclick = ()=>{
+      const newName = nameInput.value.trim() || p;
+      if(newName!==p){ tasks.forEach(t=>{ if(t.project===p) t.project=newName; }); if(projectColors[p]){ projectColors[newName]=projectColors[p]; delete projectColors[p]; } }
+      projectColors[newName] = colorInput.value;
+      persist(); render();
+    };
+    const delBtn = document.createElement('button'); delBtn.className='del-btn'; delBtn.textContent='Delete';
+    delBtn.onclick = ()=>{
+      if(confirm('Remove project "'+p+'" from all tasks? The tasks themselves are kept, just without this project.')){
+        tasks.forEach(t=>{ if(t.project===p) t.project=null; });
+        delete projectColors[p]; persist(); render();
+      }
+    };
+    row.append(nameInput, colorInput, saveBtn, delBtn);
+    projSection.append(row);
+  });
+  main.append(projSection);
+
+  const labelSection = document.createElement('div'); labelSection.className='tp-section';
+  labelSection.innerHTML = '<h3>Labels</h3>';
+  const labelsArr = labelList();
+  if(labelsArr.length===0){ const e=document.createElement('div'); e.className='empty'; e.textContent='No labels yet - add one from any task.'; labelSection.append(e); }
+  labelsArr.forEach(l=>{
+    const row = document.createElement('div'); row.className='tp-row';
+    const nameInput = document.createElement('input'); nameInput.type='text'; nameInput.value=l;
+    const colorInput = document.createElement('input'); colorInput.type='color'; colorInput.value = labelColors[l]||DEFAULT_LABEL_COLOR;
+    const saveBtn = document.createElement('button'); saveBtn.className='plan-btn'; saveBtn.textContent='Save';
+    saveBtn.onclick = ()=>{
+      const newName = nameInput.value.trim() || l;
+      if(newName!==l){ tasks.forEach(t=>{ t.labels = (t.labels||[]).map(x=>x===l?newName:x); }); if(labelColors[l]){ labelColors[newName]=labelColors[l]; delete labelColors[l]; } }
+      labelColors[newName] = colorInput.value;
+      persist(); render();
+    };
+    const delBtn = document.createElement('button'); delBtn.className='del-btn'; delBtn.textContent='Delete';
+    delBtn.onclick = ()=>{
+      if(confirm('Remove label "#'+l+'" from all tasks?')){
+        tasks.forEach(t=>{ t.labels = (t.labels||[]).filter(x=>x!==l); });
+        delete labelColors[l]; persist(); render();
+      }
+    };
+    row.append(nameInput, colorInput, saveBtn, delBtn);
+    labelSection.append(row);
+  });
+  main.append(labelSection);
+}
+
 function render(){
   document.querySelectorAll('nav button[data-view]').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
   const main = document.getElementById('main'); main.innerHTML='';
   if(view==='archive'){ renderArchive(main); return; }
   if(view==='quick'){ renderQuick(main); return; }
+  if(view==='tags'){ renderTags(main); return; }
 
   const chipsWrap = document.createElement('div'); chipsWrap.className='filters';
   renderFilterChips(chipsWrap);
   main.append(chipsWrap);
 
-  // Quick tasks stay out of the main board until they've been given full details.
   let list = tasks.filter(t=>!t.quick).filter(passesFilters);
+  // Today = due today. Later = everything NOT due today (whether it's
+  // unscheduled, overdue, or planned for some future date). All = truly
+  // everything, including today's tasks too, for a full overview.
   if(view==='today') list = list.filter(isDueTodayOrRange);
-  if(view==='later') list = list.filter(t=>isUnscheduled(t) && (!t.done || t.completedAt===todayStr()));
+  if(view==='later') list = list.filter(t=>!isDueTodayOrRange(t) && (!t.done || t.completedAt===todayStr()));
 
   if(list.length===0){
     const e=document.createElement('div'); e.className='empty';
-    e.textContent = view==='today' ? 'Nothing planned for today.' : view==='later' ? 'No unscheduled tasks.' : 'No tasks match these filters.';
+    e.textContent = view==='today' ? 'Nothing planned for today.' : view==='later' ? 'Nothing outside of today.' : 'No tasks match these filters.';
     main.append(e);
   } else { renderBoard(main, list); }
 }
@@ -675,12 +725,17 @@ document.getElementById('exportBtn').onclick = ()=>{
 };
 
 /* ================================================================
-   QUICK-ADD (title only)
+   QUICK-ADD
    ================================================================ */
 const quickWrap = document.getElementById('quickWrap');
-document.getElementById('quickFab').onclick = ()=>{ document.getElementById('q-title').value=''; quickWrap.classList.add('open'); };
+document.getElementById('quickFab').onclick = ()=>{
+  document.getElementById('q-title').value='';
+  quickWrap.classList.add('open');
+  document.getElementById('q-title').focus(); // jump straight into typing
+};
 document.getElementById('qCancel').onclick = ()=> quickWrap.classList.remove('open');
 quickWrap.onclick = (e)=>{ if(e.target.id==='quickWrap') quickWrap.classList.remove('open'); };
+document.getElementById('q-title').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('qSave').click(); });
 document.getElementById('qSave').onclick = ()=>{
   const title = document.getElementById('q-title').value.trim();
   if(!title) return;
@@ -697,7 +752,10 @@ document.getElementById('qSave').onclick = ()=>{
 };
 
 /* ================================================================
-   THE FULL ADD/EDIT FORM (step-by-step wizard)
+   THE ADD/EDIT FORM
+   New tasks use a step-by-step wizard (one field group at a time).
+   Editing an existing task shows every field at once instead, since
+   at that point you're adjusting one or two things, not starting fresh.
    ================================================================ */
 const sheetWrap = document.getElementById('sheetWrap');
 function seg(id,val){ document.querySelectorAll('#'+id+' button').forEach(b=>b.classList.toggle('on', b.dataset.v===val)); }
@@ -777,8 +835,19 @@ document.getElementById('cancelBtn').onclick = ()=> sheetWrap.classList.remove('
 sheetWrap.onclick = (e)=>{ if(e.target.id==='sheetWrap') sheetWrap.classList.remove('open'); };
 
 function openSheet(task){
-  showStep(1);
   editingId = task ? task.id : null;
+  editMode = task ? 'flat' : 'wizard';
+  if(editMode==='flat'){
+    // Show every step at once, hide the wizard chrome.
+    document.querySelectorAll('.step').forEach(s=>s.classList.add('active'));
+    document.getElementById('stepProgress').style.display = 'none';
+    document.getElementById('backBtn').style.display = 'none';
+    document.getElementById('nextBtn').style.display = 'none';
+    document.getElementById('saveBtn').style.display = 'block';
+  } else {
+    document.getElementById('stepProgress').style.display = 'block';
+    showStep(1);
+  }
   document.getElementById('sheetTitle').textContent = task ? 'Edit task' : 'New task';
   document.getElementById('f-title').value = task ? task.title : '';
   seg('f-type', task ? task.type : 'personal');
@@ -825,7 +894,6 @@ document.getElementById('saveBtn').onclick = ()=>{
     freq, interval: Math.max(1, parseInt(document.getElementById('f-interval').value)||1), mode: segVal('f-recurMode'),
     weekday: parseInt(segVal('f-weekday')), monthDay: Math.min(31, Math.max(1, parseInt(document.getElementById('f-monthday').value)||1))
   };
-
   let plannedVal = later ? null : (document.getElementById('f-planned').value || null);
   let endVal = (later || !spans) ? null : (document.getElementById('f-enddate').value || null);
   if(plannedVal && endVal && endVal < plannedVal){ const tmp=plannedVal; plannedVal=endVal; endVal=tmp; }
@@ -836,8 +904,7 @@ document.getElementById('saveBtn').onclick = ()=>{
     priority: segVal('f-priority'),
     planned: plannedVal, endDate: endVal,
     due: document.getElementById('f-due').value || null,
-    recur, labels,
-    quick:false // saving through the full form always "graduates" a task out of quick-task status
+    recur, labels, quick:false
   };
 
   let savedTask;
