@@ -76,7 +76,6 @@
       <button class="plan-btn" id="cancelBtn" style="border:none">Cancel</button>
     </div>
     <div class="hint" id="stepProgress" style="margin:-8px 0 4px"></div>
-    <div class="steps-left" id="stepsLeft"></div>
 
     <div class="step" data-step="1">
       <label>Title</label>
@@ -170,6 +169,9 @@
       <button id="nextBtn">Next</button>
       <button id="saveBtn" style="display:none">Save task</button>
     </div>
+
+    <!-- Vertical timeline of the wizard's steps: click any step to jump straight to it -->
+    <div class="wizard-timeline" id="wizardTimeline"></div>
   </div>
 </div>
 

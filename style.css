@@ -50,7 +50,11 @@ main{max-width:960px;margin:0 auto;padding:16px 16px 90px;}
 .tag.quick{color:var(--quick);}
 .task-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
 .plan-btn{font:inherit;font-size:11px;font-weight:600;background:none;border:1px solid var(--ink-soft);color:var(--ink-soft);padding:4px 10px;border-radius:var(--radius);cursor:pointer;}
-.plan-btn.active{border-color:var(--inprogress);color:var(--inprogress);}
+/* Solid, high-contrast badge when "in progress" is on - the old
+   muted grey-blue outline was hard to read, so this is now a filled
+   pill instead (this is the ONLY in-progress indicator - it used to
+   be duplicated by a separate, non-clickable tag next to it). */
+.plan-btn.active{background:var(--ink);color:var(--paper);border-color:var(--ink);font-weight:700;}
 .finish-btn{font:inherit;font-size:11px;font-weight:600;background:var(--ink);color:var(--paper);border:none;padding:6px 12px;border-radius:var(--radius);cursor:pointer;}
 .skip-row{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap;}
 .skip-row input{flex:1;min-width:120px;}
@@ -115,3 +119,25 @@ table.tasktable th{text-align:left;padding:6px 8px;border-bottom:1px solid var(-
 table.tasktable td{padding:4px 6px;border-bottom:1px solid var(--line);}
 table.tasktable input,table.tasktable select{font:inherit;font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);min-width:80px;}
 table.tasktable input[type=checkbox]{min-width:auto;width:16px;height:16px;}
+
+/* ============ WIZARD STEP TIMELINE ============
+   A vertical line of dots, one per wizard step, shown below the
+   Back/Next/Save buttons. The current step's dot is highlighted;
+   completed steps get a filled dot; every step is clickable so you
+   can jump straight to it instead of stepping through one by one. */
+.wizard-timeline{position:relative;margin-top:20px;padding-left:2px;}
+.wizard-timeline::before{content:'';position:absolute;left:9px;top:10px;bottom:10px;width:2px;background:var(--line);}
+.tl-item{position:relative;z-index:1;display:flex;align-items:center;gap:10px;padding:6px 0;cursor:pointer;background:none;border:none;text-align:left;font:inherit;width:100%;}
+.tl-dot{width:20px;height:20px;border-radius:50%;flex:none;background:var(--card);border:2px solid var(--line);}
+.tl-item.tl-done .tl-dot{background:var(--ink);border-color:var(--ink);}
+.tl-item.tl-current .tl-dot{background:var(--work);border-color:var(--work);}
+.tl-label{font-size:13px;color:#9aa3a6;}
+.tl-item.tl-current .tl-label{color:var(--ink);font-weight:700;}
+.tl-item.tl-done .tl-label{color:var(--ink-soft);}
+
+/* Small round icon buttons for skip-date and delete, on task cards */
+.icon-action{width:28px;height:28px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:13px;border:1px solid var(--ink-soft);background:none;color:var(--ink-soft);cursor:pointer;padding:0;}
+.icon-danger{border-color:var(--pr-high);}
+
+/* Favorite star toggle, sitting right in the task's title row */
+.star-btn{background:none;border:none;font-size:16px;cursor:pointer;padding:0 2px;flex:none;line-height:1;color:#B28622;}

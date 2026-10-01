@@ -28,10 +28,18 @@ let applyingRemote = false;
 let view = 'today';
 let skipOpenId = null;
 
-const filters = { project:null, label:null, showDone:false };
+const filters = { project:null, label:null, showDone:false, favoritesOnly:false };
 const PRIORITY_LABELS = { high:'ASAP', medium:'Soon', low:'Later' };
 const PRIORITY_ORDER = ['high','medium','low'];
 const PRIORITY_HEX = { high:'#D8560E', medium:'#E1903E', low:'#CBD183' };
+const TYPE_HEX = { personal:'#849E15', work:'#6777B6', someday:'#B28622' };
+// How many days until a due date counts as "urgent" (colored ASAP) vs "soon".
+function dueUrgencyHex(due){
+  const diff = daysBetween(todayStr(), due);
+  if(diff<=0) return PRIORITY_HEX.high;
+  if(diff<=7) return PRIORITY_HEX.medium;
+  return null;
+}
 const TYPE_ORDER = ['personal','work','someday'];
 const TYPE_LABELS = { personal:'Personal', work:'Work', someday:'Someday' };
 const DEFAULT_PROJECT_COLOR = '#6777B6';
@@ -66,6 +74,14 @@ function daysBetween(a,b){
   const [ay,am,ad]=a.split('-').map(Number), [by,bm,bd]=b.split('-').map(Number);
   return Math.round((new Date(by,bm-1,bd) - new Date(ay,am-1,ad))/86400000);
 }
+// Displays a stored YYYY-MM-DD date as day/month for reading (e.g. "24/09").
+// This only affects text we write ourselves; the actual <input type="date">
+// pickers already show your browser's own locale format automatically.
+function fmtDate(dateStr){
+  if(!dateStr) return '';
+  const [, m, d] = dateStr.split('-');
+  return `${d}/${m}`;
+}
 function weekdayOf(dateStr){ const [y,m,d]=dateStr.split('-').map(Number); return new Date(y,m-1,d).getDay(); }
 
 /* ================================================================
@@ -76,6 +92,7 @@ function migrateTask(t){
   else if(t.endDate===undefined){ t.endDate = null; }
   if(t.inProgress===undefined) t.inProgress = false;
   if(t.quick===undefined) t.quick = false;
+  if(t.favorite===undefined) t.favorite = false;
   delete t.kind; delete t.start; delete t.end; delete t.loggedDays;
   return t;
 }
@@ -188,8 +205,23 @@ function nextOccurrenceRef(completedAt, recur){
 function isTodayOrOverdue(t){ return !!t.planned && t.planned<=todayStr(); }
 function isUnscheduled(t){ return !t.planned; }
 
+/* ================================================================
+   SHOWING/HIDING FINISHED TASKS - rewritten from scratch.
+   Older versions tried to keep a finished task visible "for the rest
+   of the day you finished it" by comparing dates - but that mixed in
+   timezone/day-boundary edge cases and kept causing confusing bugs.
+   New approach: no dates involved at all. We just remember, in memory
+   only (not saved), which task ids you've completed THIS session.
+   Those stay visible (struck through) until you leave/reload the
+   page - simple, predictable, and immune to date-comparison bugs.
+   Turning "Show done" on/off is now the ONLY other thing that changes
+   what's visible.
+   ================================================================ */
+const justCompletedIds = new Set();
+
 function completeTask(t){
   t.done = true; t.completedAt = todayStr(); t.inProgress = false;
+  justCompletedIds.add(t.id);
   if(t.recur && t.recur.freq!=='none'){
     const newRef = nextOccurrenceRef(t.completedAt, t.recur);
     const nt = JSON.parse(JSON.stringify(t));
@@ -214,10 +246,13 @@ function skipTask(t, newDate){
 function projectList(){ return [...new Set(tasks.filter(t=>t.type==='work' && t.project).map(t=>t.project))]; }
 function labelList(){ const s=new Set(); tasks.forEach(t=>(t.labels||[]).forEach(l=>s.add(l))); return [...s]; }
 
+// A task passes if it matches the active project/label filter, and is
+// either not done, done-and-"show done"-is-on, or done-just-now-this-session.
 function passesFilters(t){
   if(filters.project && t.project!==filters.project) return false;
   if(filters.label && !(t.labels||[]).includes(filters.label)) return false;
-  if(t.done && !filters.showDone && t.completedAt!==todayStr()) return false;
+  if(filters.favoritesOnly && !t.favorite) return false;
+  if(t.done && !filters.showDone && !justCompletedIds.has(t.id)) return false;
   return true;
 }
 function recurLabel(t){
@@ -237,12 +272,9 @@ function recurLabel(t){
 // Colors the "Due" chip by urgency: today's color for due-today (or
 // overdue), the "Soon" color for due within a week, plain otherwise.
 function dueChip(due){
-  const diff = daysBetween(todayStr(), due);
-  let hex = null;
-  if(diff<=0) hex = PRIORITY_HEX.high;
-  else if(diff<=7) hex = PRIORITY_HEX.medium;
-  if(hex) return `<span class="tag" style="background:${lighten(hex,0.82)};color:${hex}">Due ${due}</span>`;
-  return `<span class="tag plain">Due ${due}</span>`;
+  const hex = dueUrgencyHex(due);
+  if(hex) return `<span class="tag" style="background:${lighten(hex,0.82)};color:${hex}">Due ${fmtDate(due)}</span>`;
+  return `<span class="tag plain">Due ${fmtDate(due)}</span>`;
 }
 function lighten(hex, amt){
   const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
@@ -266,10 +298,14 @@ function taskCard(t){
   check.className = 'check'+(t.done?' done':'');
   check.style.borderColor = `var(--${t.type})`;
   check.textContent = t.done ? '✓' : '';
-  check.onclick = (e)=>{ e.stopPropagation(); if(t.done){ t.done=false; t.completedAt=null; persist(); render(); } else { completeTask(t); } };
+  check.onclick = (e)=>{ e.stopPropagation(); if(t.done){ t.done=false; t.completedAt=null; justCompletedIds.delete(t.id); persist(); render(); } else { completeTask(t); } };
   const title = document.createElement('div'); title.className='task-title'+(t.done?' done':'');
   title.textContent = t.title;
-  top.append(check, title);
+  const starBtn = document.createElement('button'); starBtn.className='star-btn';
+  starBtn.textContent = t.favorite ? '⭐' : '☆';
+  starBtn.title = t.favorite ? 'Remove from favorites' : 'Mark as favorite';
+  starBtn.onclick = (e)=>{ e.stopPropagation(); t.favorite = !t.favorite; persist(); render(); };
+  top.append(check, title, starBtn);
   div.append(top);
 
   const projColor = t.project ? (projectColors[t.project]||DEFAULT_PROJECT_COLOR) : null;
@@ -277,9 +313,8 @@ function taskCard(t){
   meta.innerHTML =
     (t.type==='work' && t.project ? `<span class="tag" style="background:${lighten(projColor,0.82)};color:${projColor}">${t.project}</span>` : '') +
     (t.due? dueChip(t.due) :'')+
-    (t.planned ? `<span class="tag plain">${t.endDate?(t.planned+' → '+t.endDate):('Planned '+t.planned)}</span>` : `<span class="tag plain">Not scheduled</span>`)+
+    (t.planned ? `<span class="tag plain">${t.endDate?(fmtDate(t.planned)+' → '+fmtDate(t.endDate)):('Planned '+fmtDate(t.planned))}</span>` : `<span class="tag plain">Not scheduled</span>`)+
     (recurLabel(t)?`<span class="tag plain">${recurLabel(t)}</span>`:'')+
-    (t.inProgress?`<span class="tag inprog">In progress</span>`:'')+
     (t.quick?`<span class="tag quick">Quick</span>`:'')+
     (t.labels||[]).map(l=>{ const c=labelColors[l]||DEFAULT_LABEL_COLOR; return `<span class="tag" style="background:${lighten(c,0.82)};color:${c}">#${l}</span>`; }).join('');
   div.append(meta);
@@ -289,11 +324,13 @@ function taskCard(t){
     const prog = document.createElement('button'); prog.className='plan-btn'+(t.inProgress?' active':'');
     prog.textContent = t.inProgress ? '● In progress' : 'Mark in progress';
     prog.onclick = (e)=>{ e.stopPropagation(); t.inProgress = !t.inProgress; persist(); render(); };
-    const skipBtn = document.createElement('button'); skipBtn.className='plan-btn';
-    skipBtn.textContent = t.planned ? 'Skip to…' : 'Set date';
+    // Skip/set-date and delete are icon buttons rather than text pills,
+    // to keep the card from getting cluttered with too much text.
+    const skipBtn = document.createElement('button'); skipBtn.className='icon-action';
+    skipBtn.textContent = '📅'; skipBtn.title = t.planned ? 'Skip to a different date' : 'Set a date';
     skipBtn.onclick = (e)=>{ e.stopPropagation(); skipOpenId = (skipOpenId===t.id)?null:t.id; render(); };
-    const delBtn = document.createElement('button'); delBtn.className='plan-btn'; delBtn.style.borderColor='var(--pr-high)'; delBtn.style.color='var(--pr-high)';
-    delBtn.textContent = 'Delete';
+    const delBtn = document.createElement('button'); delBtn.className='icon-action icon-danger';
+    delBtn.textContent = '🚮'; delBtn.title = 'Delete this task';
     delBtn.onclick = (e)=>{
       e.stopPropagation();
       if(confirm('Delete "'+t.title+'"? This just removes this task - a repeating task won\'t create any further copies from it.')){
@@ -319,6 +356,7 @@ function taskCard(t){
 
 function renderFilterChips(container){
   const mk=(label,active,onClick)=>{const c=document.createElement('button');c.className='chip'+(active?' on':'');c.textContent=label;c.onclick=onClick;return c;};
+  container.append(mk('⭐ Favorites', filters.favoritesOnly, ()=>{filters.favoritesOnly=!filters.favoritesOnly; render();}));
   projectList().forEach(p=>container.append(mk(p, filters.project===p, ()=>{filters.project=filters.project===p?null:p; render();})));
   labelList().forEach(l=>container.append(mk('#'+l, filters.label===l, ()=>{filters.label=filters.label===l?null:l; render();})));
   container.append(mk(filters.showDone?'Hide done':'Show done', filters.showDone, ()=>{filters.showDone=!filters.showDone; render();}));
@@ -349,7 +387,7 @@ function renderBoard(main, list){
 function renderTable(main, list){
   const wrap = document.createElement('div'); wrap.className='tbl-wrap';
   const table = document.createElement('table'); table.className='tasktable';
-  const headers = ['Title','Type','Project','Priority','Planned','End','Due','Labels','In progress','Done',''];
+  const headers = ['Fav','Title','Type','Project','Priority','Planned','End','Due','Labels','In progress','Done',''];
   table.innerHTML = '<thead><tr>'+headers.map(h=>`<th>${h}</th>`).join('')+'</tr></thead>';
   const tbody = document.createElement('tbody');
   const sorted = [...list].sort((a,b)=> PRIORITY_ORDER.indexOf(a.priority)-PRIORITY_ORDER.indexOf(b.priority) || TYPE_ORDER.indexOf(a.type)-TYPE_ORDER.indexOf(b.type));
@@ -360,14 +398,29 @@ function renderTable(main, list){
     const titleInp = document.createElement('input'); titleInp.type='text'; titleInp.value=t.title;
     titleInp.onchange = ()=>{ t.title=titleInp.value; persist(); };
 
+    // Type and Priority selects are colored to match their meaning elsewhere in the app.
     const typeSel = document.createElement('select');
+    typeSel.style.color = TYPE_HEX[t.type];
     TYPE_ORDER.forEach(ty=>{ const o=document.createElement('option'); o.value=ty; o.textContent=TYPE_LABELS[ty]; if(t.type===ty) o.selected=true; typeSel.append(o); });
     typeSel.onchange = ()=>{ t.type=typeSel.value; if(t.type!=='work') t.project=null; persist(); render(); };
 
-    const projInp = document.createElement('input'); projInp.type='text'; projInp.value=t.project||''; projInp.disabled = t.type!=='work';
-    projInp.onchange = ()=>{ t.project = projInp.value.trim()||null; persist(); render(); };
+    // Project is a dropdown of projects you've already used, so you pick rather than retype.
+    // "+ Add new project..." at the bottom lets you create one on the spot.
+    const projSel = document.createElement('select'); projSel.disabled = t.type!=='work';
+    const noneOpt = document.createElement('option'); noneOpt.value=''; noneOpt.textContent='(none)'; projSel.append(noneOpt);
+    projectList().forEach(p=>{ const o=document.createElement('option'); o.value=p; o.textContent=p; if(t.project===p) o.selected=true; projSel.append(o); });
+    const addOpt = document.createElement('option'); addOpt.value='__new__'; addOpt.textContent='+ Add new project…'; projSel.append(addOpt);
+    if(t.project) projSel.style.color = projectColors[t.project]||DEFAULT_PROJECT_COLOR;
+    projSel.onchange = ()=>{
+      if(projSel.value==='__new__'){
+        const name = prompt('New project name:');
+        if(name && name.trim()){ t.project = name.trim(); } else { projSel.value = t.project||''; return; }
+      } else { t.project = projSel.value || null; }
+      persist(); render();
+    };
 
     const prSel = document.createElement('select');
+    prSel.style.color = PRIORITY_HEX[t.priority];
     PRIORITY_ORDER.forEach(p=>{ const o=document.createElement('option'); o.value=p; o.textContent=PRIORITY_LABELS[p]; if(t.priority===p) o.selected=true; prSel.append(o); });
     prSel.onchange = ()=>{ t.priority=prSel.value; persist(); render(); };
 
@@ -375,18 +428,27 @@ function renderTable(main, list){
     plannedInp.onchange = ()=>{ t.planned=plannedInp.value||null; persist(); render(); };
     const endInp = document.createElement('input'); endInp.type='date'; endInp.value=t.endDate||'';
     endInp.onchange = ()=>{ t.endDate=endInp.value||null; persist(); };
+    // Due date input is colored the same way the due chip is: urgent-red if
+    // today/overdue, soon-orange if within a week.
     const dueInp = document.createElement('input'); dueInp.type='date'; dueInp.value=t.due||'';
-    dueInp.onchange = ()=>{ t.due=dueInp.value||null; persist(); };
+    if(t.due){ const hex = dueUrgencyHex(t.due); if(hex){ dueInp.style.borderColor = hex; dueInp.style.color = hex; } }
+    dueInp.onchange = ()=>{ t.due=dueInp.value||null; persist(); render(); };
 
+    // Labels stay a text field (a task can have several, and a dropdown
+    // doesn't handle "more than one" well) but typing now autocompletes
+    // against labels you've already used, via the datalist below.
     const labelsInp = document.createElement('input'); labelsInp.type='text'; labelsInp.value=(t.labels||[]).join(', ');
+    labelsInp.setAttribute('list', 'tableLabelsList');
     labelsInp.onchange = ()=>{ t.labels = labelsInp.value.split(',').map(s=>s.trim()).filter(Boolean); persist(); render(); };
 
     const progChk = document.createElement('input'); progChk.type='checkbox'; progChk.checked=!!t.inProgress;
     progChk.onchange = ()=>{ t.inProgress=progChk.checked; persist(); render(); };
+    const favChk = document.createElement('input'); favChk.type='checkbox'; favChk.checked=!!t.favorite;
+    favChk.onchange = ()=>{ t.favorite=favChk.checked; persist(); };
     const doneChk = document.createElement('input'); doneChk.type='checkbox'; doneChk.checked=!!t.done;
     doneChk.onchange = ()=>{
       if(doneChk.checked && !t.done) completeTask(t);
-      else if(!doneChk.checked && t.done){ t.done=false; t.completedAt=null; persist(); render(); }
+      else if(!doneChk.checked && t.done){ t.done=false; t.completedAt=null; justCompletedIds.delete(t.id); persist(); render(); }
     };
 
     const delBtn = document.createElement('button'); delBtn.className='del-btn'; delBtn.textContent='Delete';
@@ -396,11 +458,14 @@ function renderTable(main, list){
       }
     };
 
-    [titleInp,typeSel,projInp,prSel,plannedInp,endInp,dueInp,labelsInp,progChk,doneChk,delBtn].forEach(el=>tr.append(td(el)));
+    [favChk,titleInp,typeSel,projSel,prSel,plannedInp,endInp,dueInp,labelsInp,progChk,doneChk,delBtn].forEach(el=>tr.append(td(el)));
     tbody.append(tr);
   });
   table.append(tbody);
   wrap.append(table);
+  const dl = document.createElement('datalist'); dl.id = 'tableLabelsList';
+  dl.innerHTML = labelList().map(l=>`<option value="${l}">`).join('');
+  wrap.append(dl);
   main.append(wrap);
 }
 function renderQuick(main){
@@ -428,7 +493,7 @@ function renderArchive(main){
   done.forEach(t=>{
     const row = document.createElement('div'); row.className='archive-row';
     const info = document.createElement('div'); info.className='info';
-    info.innerHTML = `<div class="title">${t.title}</div><div class="date">Finished ${t.completedAt}</div>`;
+    info.innerHTML = `<div class="title">${t.title}</div><div class="date">Finished ${fmtDate(t.completedAt)}</div>`;
     const del = document.createElement('button'); del.className='del-btn'; del.textContent='Delete';
     del.onclick = ()=>{ if(confirm('Delete "'+t.title+'" permanently?')){ tasks = tasks.filter(x=>x.id!==t.id); persist(); render(); } };
     row.append(info, del);
@@ -644,14 +709,29 @@ function renderLabelChips(){
 
 const TOTAL_STEPS = 7;
 let currentStep = 1;
+// Builds the vertical timeline of step dots below Back/Next/Save.
+// Clicking any dot/label jumps straight to that step.
+function renderWizardTimeline(n){
+  const wrap = document.getElementById('wizardTimeline');
+  wrap.innerHTML = '';
+  STEP_TITLES.forEach((title, i)=>{
+    const stepNum = i+1;
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'tl-item' + (stepNum===n ? ' tl-current' : stepNum<n ? ' tl-done' : '');
+    item.innerHTML = `<span class="tl-dot"></span><span class="tl-label">${title}</span>`;
+    item.onclick = ()=>showStep(stepNum);
+    wrap.append(item);
+  });
+}
 function showStep(n){
   currentStep = n;
   document.querySelectorAll('.step').forEach(s=>s.classList.toggle('active', parseInt(s.dataset.step)===n));
   document.getElementById('stepProgress').textContent = 'Step '+n+' of '+TOTAL_STEPS;
-  document.getElementById('stepsLeft').textContent = n<TOTAL_STEPS ? 'Still to go: '+STEP_TITLES.slice(n).join(' · ') : '';
   document.getElementById('backBtn').style.display = n===1 ? 'none':'inline-block';
   document.getElementById('nextBtn').style.display = n===TOTAL_STEPS ? 'none':'block';
   document.getElementById('saveBtn').style.display = 'block'; // Save is always available, even mid-wizard
+  renderWizardTimeline(n);
 }
 document.getElementById('nextBtn').onclick = ()=>{
   if(currentStep===1 && !document.getElementById('f-title').value.trim()){ document.getElementById('f-title').focus(); return; }
@@ -667,13 +747,13 @@ function openSheet(task){
   if(editMode==='flat'){
     document.querySelectorAll('.step').forEach(s=>s.classList.add('active'));
     document.getElementById('stepProgress').style.display = 'none';
-    document.getElementById('stepsLeft').style.display = 'none';
+    document.getElementById('wizardTimeline').style.display = 'none';
     document.getElementById('backBtn').style.display = 'none';
     document.getElementById('nextBtn').style.display = 'none';
     document.getElementById('saveBtn').style.display = 'block';
   } else {
     document.getElementById('stepProgress').style.display = 'block';
-    document.getElementById('stepsLeft').style.display = 'block';
+    document.getElementById('wizardTimeline').style.display = 'block';
     showStep(1);
   }
   document.getElementById('sheetTitle').textContent = task ? 'Edit task' : 'New task';
