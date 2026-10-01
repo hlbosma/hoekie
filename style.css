@@ -141,3 +141,6 @@ table.tasktable input[type=checkbox]{min-width:auto;width:16px;height:16px;}
 
 /* Favorite star toggle, sitting right in the task's title row */
 .star-btn{background:none;border:none;font-size:16px;cursor:pointer;padding:0 2px;flex:none;line-height:1;color:#B28622;}
+
+/* Expandable panel under the Projects/Tags filter buttons */
+.filter-picker{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px;margin:-6px 0 14px;}

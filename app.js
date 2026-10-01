@@ -28,7 +28,8 @@ let applyingRemote = false;
 let view = 'today';
 let skipOpenId = null;
 
-const filters = { project:null, label:null, showDone:false, favoritesOnly:false };
+const filters = { favoritesOnly:false, showDone:false, projects:[], projectMode:'show', labels:[], labelMode:'show' };
+let openFilterPicker = null; // 'project' | 'label' | null - which picker panel is expanded
 const PRIORITY_LABELS = { high:'ASAP', medium:'Soon', low:'Later' };
 const PRIORITY_ORDER = ['high','medium','low'];
 const PRIORITY_HEX = { high:'#D8560E', medium:'#E1903E', low:'#CBD183' };
@@ -206,22 +207,19 @@ function isTodayOrOverdue(t){ return !!t.planned && t.planned<=todayStr(); }
 function isUnscheduled(t){ return !t.planned; }
 
 /* ================================================================
-   SHOWING/HIDING FINISHED TASKS - rewritten from scratch.
-   Older versions tried to keep a finished task visible "for the rest
-   of the day you finished it" by comparing dates - but that mixed in
-   timezone/day-boundary edge cases and kept causing confusing bugs.
-   New approach: no dates involved at all. We just remember, in memory
-   only (not saved), which task ids you've completed THIS session.
-   Those stay visible (struck through) until you leave/reload the
-   page - simple, predictable, and immune to date-comparison bugs.
-   Turning "Show done" on/off is now the ONLY other thing that changes
-   what's visible.
+   SHOWING/HIDING FINISHED TASKS - rebuilt to work exactly like the
+   favorites filter, since that one has proven reliable: a single
+   boolean on the task (t.done), checked directly against a single
+   boolean filter (filters.showDone), nothing else involved. Earlier
+   versions tried to keep a just-finished task visible a little
+   longer as a grace period, using dates or session memory - that
+   extra logic was the actual source of the recurring bugs. Removing
+   it means checking a task off now hides it immediately when "Show
+   done" is off, same as unstarring a task hides it immediately when
+   "Favorites" is on - consistent, simple, and easy to reason about.
    ================================================================ */
-const justCompletedIds = new Set();
-
 function completeTask(t){
   t.done = true; t.completedAt = todayStr(); t.inProgress = false;
-  justCompletedIds.add(t.id);
   if(t.recur && t.recur.freq!=='none'){
     const newRef = nextOccurrenceRef(t.completedAt, t.recur);
     const nt = JSON.parse(JSON.stringify(t));
@@ -246,13 +244,23 @@ function skipTask(t, newDate){
 function projectList(){ return [...new Set(tasks.filter(t=>t.type==='work' && t.project).map(t=>t.project))]; }
 function labelList(){ const s=new Set(); tasks.forEach(t=>(t.labels||[]).forEach(l=>s.add(l))); return [...s]; }
 
-// A task passes if it matches the active project/label filter, and is
-// either not done, done-and-"show done"-is-on, or done-just-now-this-session.
+// Same shape as the favorites check below: one flag on the task,
+// one filter flag, compared directly. Projects/labels now support
+// picking several at once, either as a "show only these" list or a
+// "hide these" list.
 function passesFilters(t){
-  if(filters.project && t.project!==filters.project) return false;
-  if(filters.label && !(t.labels||[]).includes(filters.label)) return false;
+  if(filters.projects.length){
+    const match = filters.projects.includes(t.project);
+    if(filters.projectMode==='show' && !match) return false;
+    if(filters.projectMode==='hide' && match) return false;
+  }
+  if(filters.labels.length){
+    const match = (t.labels||[]).some(l=>filters.labels.includes(l));
+    if(filters.labelMode==='show' && !match) return false;
+    if(filters.labelMode==='hide' && match) return false;
+  }
   if(filters.favoritesOnly && !t.favorite) return false;
-  if(t.done && !filters.showDone && !justCompletedIds.has(t.id)) return false;
+  if(t.done && !filters.showDone) return false;
   return true;
 }
 function recurLabel(t){
@@ -298,7 +306,7 @@ function taskCard(t){
   check.className = 'check'+(t.done?' done':'');
   check.style.borderColor = `var(--${t.type})`;
   check.textContent = t.done ? '✓' : '';
-  check.onclick = (e)=>{ e.stopPropagation(); if(t.done){ t.done=false; t.completedAt=null; justCompletedIds.delete(t.id); persist(); render(); } else { completeTask(t); } };
+  check.onclick = (e)=>{ e.stopPropagation(); if(t.done){ t.done=false; t.completedAt=null; persist(); render(); } else { completeTask(t); } };
   const title = document.createElement('div'); title.className='task-title'+(t.done?' done':'');
   title.textContent = t.title;
   const starBtn = document.createElement('button'); starBtn.className='star-btn';
@@ -330,7 +338,7 @@ function taskCard(t){
     skipBtn.textContent = '📅'; skipBtn.title = t.planned ? 'Skip to a different date' : 'Set a date';
     skipBtn.onclick = (e)=>{ e.stopPropagation(); skipOpenId = (skipOpenId===t.id)?null:t.id; render(); };
     const delBtn = document.createElement('button'); delBtn.className='icon-action icon-danger';
-    delBtn.textContent = '🚮'; delBtn.title = 'Delete this task';
+    delBtn.textContent = '❌'; delBtn.title = 'Delete this task';
     delBtn.onclick = (e)=>{
       e.stopPropagation();
       if(confirm('Delete "'+t.title+'"? This just removes this task - a repeating task won\'t create any further copies from it.')){
@@ -357,9 +365,58 @@ function taskCard(t){
 function renderFilterChips(container){
   const mk=(label,active,onClick)=>{const c=document.createElement('button');c.className='chip'+(active?' on':'');c.textContent=label;c.onclick=onClick;return c;};
   container.append(mk('⭐ Favorites', filters.favoritesOnly, ()=>{filters.favoritesOnly=!filters.favoritesOnly; render();}));
-  projectList().forEach(p=>container.append(mk(p, filters.project===p, ()=>{filters.project=filters.project===p?null:p; render();})));
-  labelList().forEach(l=>container.append(mk('#'+l, filters.label===l, ()=>{filters.label=filters.label===l?null:l; render();})));
-  container.append(mk(filters.showDone?'Hide done':'Show done', filters.showDone, ()=>{filters.showDone=!filters.showDone; render();}));
+  // The on/off wording stays the same either way - only the checkmark and
+  // the chip's own highlight change - so it's never ambiguous which state you're in.
+  container.append(mk((filters.showDone?'✓ ':'')+'Show finished tasks', filters.showDone, ()=>{filters.showDone=!filters.showDone; render();}));
+  const projLabel = 'Projects' + (filters.projects.length ? ` (${filters.projects.length})` : '');
+  container.append(mk(projLabel, filters.projects.length>0 || openFilterPicker==='project', ()=>{ openFilterPicker = openFilterPicker==='project'?null:'project'; render(); }));
+  const tagLabel = 'Tags' + (filters.labels.length ? ` (${filters.labels.length})` : '');
+  container.append(mk(tagLabel, filters.labels.length>0 || openFilterPicker==='label', ()=>{ openFilterPicker = openFilterPicker==='label'?null:'label'; render(); }));
+}
+
+// The expandable panel that opens under the Projects/Tags buttons: pick
+// any number of projects or tags, and choose whether that list means
+// "only show tasks with these" or "hide tasks with these".
+function renderFilterPicker(main){
+  if(!openFilterPicker) return;
+  const isProj = openFilterPicker==='project';
+  const items = isProj ? projectList() : labelList();
+  const selected = isProj ? filters.projects : filters.labels;
+  const modeKey = isProj ? 'projectMode' : 'labelMode';
+
+  const wrap = document.createElement('div'); wrap.className='filter-picker';
+  const modeRow = document.createElement('div'); modeRow.className='seg'; modeRow.style.marginBottom='10px';
+  [['show','Show selected'],['hide','Hide selected']].forEach(([m,label])=>{
+    const b = document.createElement('button'); b.type='button'; b.textContent=label;
+    b.className = filters[modeKey]===m ? 'on' : '';
+    b.onclick = ()=>{ filters[modeKey]=m; render(); };
+    modeRow.append(b);
+  });
+  wrap.append(modeRow);
+
+  if(items.length===0){
+    const e=document.createElement('div'); e.className='empty'; e.textContent = isProj?'No projects yet.':'No tags yet.';
+    wrap.append(e);
+  } else {
+    const chipsRow = document.createElement('div'); chipsRow.className='chip-row';
+    items.forEach(it=>{
+      const c = document.createElement('button'); c.type='button'; c.className='pick-chip'+(selected.includes(it)?' on':'');
+      c.textContent = isProj ? it : '#'+it;
+      c.onclick = ()=>{
+        const i = selected.indexOf(it);
+        if(i>-1) selected.splice(i,1); else selected.push(it);
+        render();
+      };
+      chipsRow.append(c);
+    });
+    wrap.append(chipsRow);
+  }
+  if(selected.length){
+    const clear = document.createElement('button'); clear.className='plan-btn'; clear.style.marginTop='10px'; clear.textContent='Clear';
+    clear.onclick = ()=>{ selected.length=0; render(); };
+    wrap.append(clear);
+  }
+  main.append(wrap);
 }
 function renderBoard(main, list){
   PRIORITY_ORDER.forEach(pr=>{
@@ -448,7 +505,7 @@ function renderTable(main, list){
     const doneChk = document.createElement('input'); doneChk.type='checkbox'; doneChk.checked=!!t.done;
     doneChk.onchange = ()=>{
       if(doneChk.checked && !t.done) completeTask(t);
-      else if(!doneChk.checked && t.done){ t.done=false; t.completedAt=null; justCompletedIds.delete(t.id); persist(); render(); }
+      else if(!doneChk.checked && t.done){ t.done=false; t.completedAt=null; persist(); render(); }
     };
 
     const delBtn = document.createElement('button'); delBtn.className='del-btn'; delBtn.textContent='Delete';
@@ -579,10 +636,12 @@ function render(){
   const chipsWrap = document.createElement('div'); chipsWrap.className='filters';
   renderFilterChips(chipsWrap);
   main.append(chipsWrap);
+  renderFilterPicker(main);
 
   let list = tasks.filter(t=>!t.quick).filter(passesFilters);
   if(view==='today') list = list.filter(isTodayOrOverdue);
-  if(view==='later') list = list.filter(t=>!isTodayOrOverdue(t) && (!t.done || t.completedAt===todayStr()));
+  // "All tasks" (the renamed Later tab) now has no date filter at all -
+  // it shows everything not excluded by the chips above, today included.
 
   if(view==='all'){
     if(list.length===0){ const e=document.createElement('div'); e.className='empty'; e.textContent='No tasks match these filters.'; main.append(e); }
@@ -591,7 +650,7 @@ function render(){
   }
   if(list.length===0){
     const e=document.createElement('div'); e.className='empty';
-    e.textContent = view==='today' ? 'Nothing planned for today.' : 'Nothing outside of today.';
+    e.textContent = view==='today' ? 'Nothing planned for today.' : 'No tasks match these filters.';
     main.append(e);
   } else { renderBoard(main, list); }
 }
