@@ -151,3 +151,8 @@ table.tasktable input[type=checkbox]{min-width:auto;width:16px;height:16px;}
 /* Small red count badge on the Quick tab, showing how many quick tasks
    are still waiting to have their full details filled in. */
 .badge{position:absolute;top:-6px;right:-6px;background:var(--pr-high);color:#fff;font-size:10px;font-weight:700;min-width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;padding:0 3px;line-height:1;}
+
+/* Drag-and-drop between board cells (mouse only - most touchscreens
+   don't support HTML drag-and-drop) */
+.task{cursor:grab;}
+.type-col.drop-target{outline:2px dashed var(--ink-soft);outline-offset:2px;border-radius:12px;}

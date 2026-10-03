@@ -37,8 +37,8 @@ const TYPE_HEX = { personal:'#849E15', work:'#6777B6', someday:'#B28622' };
 // How many days until a due date counts as "urgent" (colored ASAP) vs "soon".
 function dueUrgencyHex(due){
   const diff = daysBetween(todayStr(), due);
-  if(diff<=0) return PRIORITY_HEX.high;
-  if(diff<=7) return PRIORITY_HEX.medium;
+  if(diff<=1) return PRIORITY_HEX.high;   // overdue, today, or tomorrow
+  if(diff<=7) return PRIORITY_HEX.medium; // within the next week
   return null;
 }
 const TYPE_ORDER = ['work','personal','someday'];
@@ -317,6 +317,8 @@ function taskCard(t){
   div.style.background = t.inProgress ? lighten(PRIORITY_HEX[t.priority], 0.85) : 'var(--card)';
   // Tapping anywhere on the card opens it for editing.
   div.onclick = ()=>openSheet(t);
+  div.draggable = true;
+  div.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain', t.id); });
 
   const top = document.createElement('div'); top.className='task-top';
   const check = document.createElement('button');
@@ -403,9 +405,11 @@ function renderFilterPicker(main){
 
   const wrap = document.createElement('div'); wrap.className='filter-picker';
   const modeRow = document.createElement('div'); modeRow.className='mode-toggle'; modeRow.style.marginBottom='10px';
+  // Show selected = green ("include"), Hide selected = red ("exclude") - only when active.
+  const MODE_HEX = { show: '#849E15', hide: '#D8560E' };
   [['show','Show selected'],['hide','Hide selected']].forEach(([m,label])=>{
-    const b = document.createElement('button'); b.type='button'; b.textContent=label;
-    b.className = 'pick-chip' + (filters[modeKey]===m ? ' on' : '');
+    const b = document.createElement('button'); b.type='button'; b.textContent=label; b.className='pick-chip';
+    if(filters[modeKey]===m){ b.style.background=MODE_HEX[m]; b.style.borderColor=MODE_HEX[m]; b.style.color='#fff'; }
     b.onclick = ()=>{ filters[modeKey]=m; render(); };
     modeRow.append(b);
   });
@@ -417,8 +421,13 @@ function renderFilterPicker(main){
   } else {
     const chipsRow = document.createElement('div'); chipsRow.className='chip-row';
     items.forEach(it=>{
-      const c = document.createElement('button'); c.type='button'; c.className='pick-chip'+(selected.includes(it)?' on':'');
+      const c = document.createElement('button'); c.type='button'; c.className='pick-chip';
       c.textContent = isProj ? it : '#'+it;
+      // Selected chips use the item's OWN assigned color, not one generic color for everything.
+      if(selected.includes(it)){
+        const hex = isProj ? (projectColors[it]||DEFAULT_PROJECT_COLOR) : (labelColors[it]||DEFAULT_LABEL_COLOR);
+        c.style.background = hex; c.style.borderColor = hex; c.style.color = '#fff';
+      }
       c.onclick = ()=>{
         const i = selected.indexOf(it);
         if(i>-1) selected.splice(i,1); else selected.push(it);
@@ -451,6 +460,22 @@ function renderBoard(main, list){
       const cellTasks = list.filter(t=>t.priority===pr && t.type===ty);
       if(cellTasks.length===0){ const e=document.createElement('div'); e.className='empty'; e.textContent='—'; col.append(e); }
       else { cellTasks.forEach(t=>col.append(taskCard(t))); }
+      // Drag a task card into this column to re-assign its priority (this row)
+      // and type (this column) in one move. Mouse-only - most touchscreens
+      // don't support this kind of drag-and-drop, so on a phone, editing the
+      // task directly is still the way to change these.
+      col.addEventListener('dragover', e=>{ e.preventDefault(); col.classList.add('drop-target'); });
+      col.addEventListener('dragleave', ()=>{ col.classList.remove('drop-target'); });
+      col.addEventListener('drop', e=>{
+        e.preventDefault(); col.classList.remove('drop-target');
+        const id = e.dataTransfer.getData('text/plain');
+        const t = tasks.find(x=>x.id===id);
+        if(t && (t.priority!==pr || t.type!==ty)){
+          t.priority = pr; t.type = ty;
+          if(ty!=='work') t.project = null;
+          persist(); render();
+        }
+      });
       cols.append(col);
     });
     row.append(cols);
@@ -730,7 +755,17 @@ document.getElementById('qSave').onclick = ()=>{
    THE ADD/EDIT FORM
    ================================================================ */
 const sheetWrap = document.getElementById('sheetWrap');
-function seg(id,val){ document.querySelectorAll('#'+id+' button').forEach(b=>b.classList.toggle('on', b.dataset.v===val)); }
+// Type and Priority buttons get colored with their OWN assigned color when
+// selected (instead of the generic dark "on" state every other seg uses).
+function seg(id,val){
+  const colorMap = id==='f-type' ? TYPE_HEX : id==='f-priority' ? PRIORITY_HEX : null;
+  document.querySelectorAll('#'+id+' button').forEach(b=>{
+    const isOn = b.dataset.v===val;
+    b.classList.toggle('on', isOn);
+    if(colorMap && isOn){ const hex=colorMap[b.dataset.v]; b.style.background=hex; b.style.borderColor=hex; b.style.color='#fff'; }
+    else { b.style.background=''; b.style.borderColor=''; b.style.color=''; }
+  });
+}
 function segVal(id){ return document.querySelector('#'+id+' button.on').dataset.v; }
 
 document.querySelectorAll('.seg').forEach(s=>{
@@ -774,9 +809,12 @@ function updateRecurVisibility(){
 function renderProjectChips(){
   const wrap = document.getElementById('f-projectChips'); wrap.innerHTML='';
   projectList().forEach(p=>{
-    const c = document.createElement('button'); c.type='button';
-    c.className='pick-chip'+(document.getElementById('f-project').value===p?' on':'');
+    const c = document.createElement('button'); c.type='button'; c.className='pick-chip';
     c.textContent = p;
+    if(document.getElementById('f-project').value===p){
+      const hex = projectColors[p]||DEFAULT_PROJECT_COLOR;
+      c.style.background=hex; c.style.borderColor=hex; c.style.color='#fff';
+    }
     c.onclick = ()=>{ document.getElementById('f-project').value = p; renderProjectChips(); };
     wrap.append(c);
   });
@@ -784,8 +822,12 @@ function renderProjectChips(){
 function renderLabelChips(){
   const wrap = document.getElementById('f-labelChips'); wrap.innerHTML='';
   labelList().forEach(l=>{
-    const c = document.createElement('button'); c.type='button'; c.className='pick-chip'+(selectedLabels.has(l)?' on':'');
+    const c = document.createElement('button'); c.type='button'; c.className='pick-chip';
     c.textContent = '#'+l;
+    if(selectedLabels.has(l)){
+      const hex = labelColors[l]||DEFAULT_LABEL_COLOR;
+      c.style.background=hex; c.style.borderColor=hex; c.style.color='#fff';
+    }
     c.onclick = ()=>{ selectedLabels.has(l)?selectedLabels.delete(l):selectedLabels.add(l); renderLabelChips(); };
     wrap.append(c);
   });
