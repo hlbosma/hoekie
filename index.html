@@ -44,7 +44,7 @@
     <button data-view="today" class="active">Today</button>
     <button data-view="later">All tasks</button>
     <button data-view="all">Table</button>
-    <button data-view="quick">Quick</button>
+    <button data-view="quick" style="position:relative">Quick<span class="badge" id="quickBadge" style="display:none"></span></button>
     <button data-view="tags">Tags & Projects</button>
     <button data-view="archive">Archive</button>
     <div class="nav-right">
@@ -129,11 +129,12 @@
       <div class="seg" id="f-recurFreq">
         <button data-v="none" class="on">Never</button>
         <button data-v="days">Every X days</button>
+        <button data-v="weekdays">Weekdays (Mon-Fri)</button>
         <button data-v="weekly">Weekly</button>
         <button data-v="monthly">Monthly</button>
       </div>
       <div id="f-recurExtra" style="display:none">
-        <div class="row2">
+        <div class="row2" id="f-intervalModeRow">
           <div><label id="f-intervalLabel">Every</label><input type="number" id="f-interval" min="1" value="1"></div>
           <div id="f-modeWrap">
             <label>Base next one on</label>

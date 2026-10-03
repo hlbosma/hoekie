@@ -41,7 +41,7 @@ function dueUrgencyHex(due){
   if(diff<=7) return PRIORITY_HEX.medium;
   return null;
 }
-const TYPE_ORDER = ['personal','work','someday'];
+const TYPE_ORDER = ['work','personal','someday'];
 const TYPE_LABELS = { personal:'Personal', work:'Work', someday:'Someday' };
 const DEFAULT_PROJECT_COLOR = '#6777B6';
 const DEFAULT_LABEL_COLOR = '#D17089';
@@ -189,6 +189,12 @@ function nextMonthDay(afterDate, monthDay){
   return afterDate;
 }
 function nextOccurrenceRef(completedAt, recur){
+  if(recur.freq==='weekdays'){
+    // Always lands on the next Mon-Fri, skipping straight over any weekend.
+    let d = addDays(completedAt, 1);
+    while(weekdayOf(d)===0 || weekdayOf(d)===6) d = addDays(d, 1);
+    return d;
+  }
   if(recur.mode==='fixed'){
     if(recur.freq==='weekly'){ let d=nextWeekday(completedAt, recur.weekday); if(recur.interval>1) d=addDays(d,(recur.interval-1)*7); return d; }
     if(recur.freq==='monthly'){ let d=nextMonthDay(completedAt, recur.monthDay); if(recur.interval>1) d=addMonths(d, recur.interval-1); return d; }
@@ -265,6 +271,7 @@ function passesFilters(t){
 }
 function recurLabel(t){
   if(!t.recur || t.recur.freq==='none') return '';
+  if(t.recur.freq==='weekdays') return '↻ every weekday (Mon-Fri)';
   const n = t.recur.interval>1 ? t.recur.interval+' ' : '';
   const unit = {days:'day(s)', weekly:'week(s)', monthly:'month(s)'}[t.recur.freq];
   let extra = '';
@@ -279,6 +286,16 @@ function recurLabel(t){
 }
 // Colors the "Due" chip by urgency: today's color for due-today (or
 // overdue), the "Soon" color for due within a week, plain otherwise.
+// The "Planned" chip turns the same urgent color as the Due chip's
+// today/overdue state, whenever the planned date has already passed
+// and the task isn't finished.
+function plannedChip(t){
+  const label = t.endDate ? (fmtDate(t.planned)+' → '+fmtDate(t.endDate)) : ('Planned '+fmtDate(t.planned));
+  if(t.planned < todayStr()){
+    return `<span class="tag" style="background:${lighten(PRIORITY_HEX.high,0.82)};color:${PRIORITY_HEX.high}">${label}</span>`;
+  }
+  return `<span class="tag plain">${label}</span>`;
+}
 function dueChip(due){
   const hex = dueUrgencyHex(due);
   if(hex) return `<span class="tag" style="background:${lighten(hex,0.82)};color:${hex}">Due ${fmtDate(due)}</span>`;
@@ -321,7 +338,7 @@ function taskCard(t){
   meta.innerHTML =
     (t.type==='work' && t.project ? `<span class="tag" style="background:${lighten(projColor,0.82)};color:${projColor}">${t.project}</span>` : '') +
     (t.due? dueChip(t.due) :'')+
-    (t.planned ? `<span class="tag plain">${t.endDate?(fmtDate(t.planned)+' → '+fmtDate(t.endDate)):('Planned '+fmtDate(t.planned))}</span>` : `<span class="tag plain">Not scheduled</span>`)+
+    (t.planned ? plannedChip(t) : `<span class="tag plain">Not scheduled</span>`)+
     (recurLabel(t)?`<span class="tag plain">${recurLabel(t)}</span>`:'')+
     (t.quick?`<span class="tag quick">Quick</span>`:'')+
     (t.labels||[]).map(l=>{ const c=labelColors[l]||DEFAULT_LABEL_COLOR; return `<span class="tag" style="background:${lighten(c,0.82)};color:${c}">#${l}</span>`; }).join('');
@@ -385,10 +402,10 @@ function renderFilterPicker(main){
   const modeKey = isProj ? 'projectMode' : 'labelMode';
 
   const wrap = document.createElement('div'); wrap.className='filter-picker';
-  const modeRow = document.createElement('div'); modeRow.className='seg'; modeRow.style.marginBottom='10px';
+  const modeRow = document.createElement('div'); modeRow.className='mode-toggle'; modeRow.style.marginBottom='10px';
   [['show','Show selected'],['hide','Hide selected']].forEach(([m,label])=>{
     const b = document.createElement('button'); b.type='button'; b.textContent=label;
-    b.className = filters[modeKey]===m ? 'on' : '';
+    b.className = 'pick-chip' + (filters[modeKey]===m ? ' on' : '');
     b.onclick = ()=>{ filters[modeKey]=m; render(); };
     modeRow.append(b);
   });
@@ -628,6 +645,11 @@ function renderTags(main){
 
 function render(){
   document.querySelectorAll('nav button[data-view]').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
+  // Keep the Quick tab's badge up to date with how many quick tasks are still unfinished.
+  const pendingQuick = tasks.filter(t=>t.quick && !t.done).length;
+  const badge = document.getElementById('quickBadge');
+  badge.textContent = pendingQuick;
+  badge.style.display = pendingQuick>0 ? 'flex' : 'none';
   const main = document.getElementById('main'); main.innerHTML='';
   if(view==='archive'){ renderArchive(main); return; }
   if(view==='quick'){ renderQuick(main); return; }
@@ -735,6 +757,8 @@ function updateRecurVisibility(){
   const freq = segVal('f-recurFreq'), mode = segVal('f-recurMode');
   const extra = document.getElementById('f-recurExtra');
   extra.style.display = freq==='none' ? 'none':'block';
+  // "Weekdays" has no interval/mode/day-picker at all - it's always just "next Mon-Fri".
+  document.getElementById('f-intervalModeRow').style.display = freq==='weekdays' ? 'none':'flex';
   document.getElementById('f-modeWrap').style.display = freq==='days' ? 'none':'block';
   document.getElementById('f-weekdayWrap').style.display = (freq==='weekly' && mode==='fixed') ? 'block':'none';
   document.getElementById('f-monthdayWrap').style.display = (freq==='monthly' && mode==='fixed') ? 'block':'none';
@@ -742,6 +766,7 @@ function updateRecurVisibility(){
   document.getElementById('f-intervalLabel').textContent = labels[freq] || 'Every';
   const hint = document.getElementById('f-recurHint');
   if(freq==='none') hint.textContent='';
+  else if(freq==='weekdays') hint.textContent='Skips weekends - always lands on the next Monday-to-Friday date after you finish it.';
   else if(freq==='days') hint.textContent='Next task is created N days after you finish this one.';
   else if(mode==='fixed') hint.textContent='Always lands on the day you pick below, no matter when you finish it.';
   else hint.textContent='Counts forward from the day you actually finish the task.';
