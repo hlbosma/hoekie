@@ -54,6 +54,7 @@
   </nav>
 </header>
 <main id="main"></main>
+<div class="toast" id="toast"></div>
 <button class="fab-quick" id="quickFab" title="Add a quick task">⚡</button>
 <button class="fab" id="addBtn">+</button>
 
@@ -85,9 +86,9 @@
     <div class="step" data-step="2">
       <label>Type</label>
       <div class="seg" id="f-type">
-        <button data-v="personal" class="on">Personal</button>
+        <button data-v="personal" class="on">Chores</button>
         <button data-v="work">Work</button>
-        <button data-v="someday">Someday</button>
+        <button data-v="someday">Other</button>
       </div>
       <div id="f-projectWrap" style="display:none">
         <label>Project</label>
@@ -163,6 +164,11 @@
       <label>Labels</label>
       <input type="text" id="f-labels" placeholder="Add new labels, comma-separated">
       <div class="chip-row" id="f-labelChips"></div>
+    </div>
+
+    <div class="step" data-step="8">
+      <label>Notes (optional)</label>
+      <textarea id="f-notes" rows="5" placeholder="Any extra details, context, or sub-steps..."></textarea>
     </div>
 
     <div class="sheet-actions">

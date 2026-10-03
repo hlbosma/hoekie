@@ -28,7 +28,7 @@ let applyingRemote = false;
 let view = 'today';
 let skipOpenId = null;
 
-const filters = { favoritesOnly:false, showDone:false, projects:[], projectMode:'show', labels:[], labelMode:'show' };
+const filters = { favoritesOnly:false, showDone:false, projects:[], projectMode:'show', labels:[], labelMode:'show', simpleView:false, unplannedOnly:false };
 let openFilterPicker = null; // 'project' | 'label' | null - which picker panel is expanded
 const PRIORITY_LABELS = { high:'ASAP', medium:'Soon', low:'Later' };
 const PRIORITY_ORDER = ['high','medium','low'];
@@ -42,10 +42,10 @@ function dueUrgencyHex(due){
   return null;
 }
 const TYPE_ORDER = ['work','personal','someday'];
-const TYPE_LABELS = { personal:'Personal', work:'Work', someday:'Someday' };
+const TYPE_LABELS = { personal:'Chores', work:'Work', someday:'Other' };
 const DEFAULT_PROJECT_COLOR = '#6777B6';
 const DEFAULT_LABEL_COLOR = '#D17089';
-const STEP_TITLES = ['Title','Type & project','Priority','Dates','Due date','Repeat','Labels'];
+const STEP_TITLES = ['Title','Type & project','Priority','Dates','Due date','Repeat','Labels','Notes'];
 
 /* ================================================================
    DATE HELPERS
@@ -94,6 +94,7 @@ function migrateTask(t){
   if(t.inProgress===undefined) t.inProgress = false;
   if(t.quick===undefined) t.quick = false;
   if(t.favorite===undefined) t.favorite = false;
+  if(t.notes===undefined) t.notes = '';
   delete t.kind; delete t.start; delete t.end; delete t.loggedDays;
   return t;
 }
@@ -238,8 +239,18 @@ function completeTask(t){
       else { nt.due = stepDate(t.due, t.recur.freq, t.recur.interval); }
     }
     tasks.push(nt);
+    showToast('New task created for '+fmtDate(nt.planned));
   }
   persist(); render();
+}
+// Briefly shows a message at the bottom of the screen, then fades it out on its own.
+let toastTimer = null;
+function showToast(message){
+  const el = document.getElementById('toast');
+  el.textContent = message;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>el.classList.remove('show'), 2600);
 }
 function skipTask(t, newDate){
   const span = t.endDate ? daysBetween(t.planned, t.endDate) : 0;
@@ -266,6 +277,7 @@ function passesFilters(t){
     if(filters.labelMode==='hide' && match) return false;
   }
   if(filters.favoritesOnly && !t.favorite) return false;
+  if(filters.unplannedOnly && t.planned) return false;
   if(t.done && !filters.showDone) return false;
   return true;
 }
@@ -292,14 +304,22 @@ function recurLabel(t){
 function plannedChip(t){
   const label = t.endDate ? (fmtDate(t.planned)+' → '+fmtDate(t.endDate)) : ('Planned '+fmtDate(t.planned));
   if(t.planned < todayStr()){
-    return `<span class="tag" style="background:${lighten(PRIORITY_HEX.high,0.82)};color:${PRIORITY_HEX.high}">${label}</span>`;
+    return `<span class="tag" style="background:${lighten(PRIORITY_HEX.high,0.82)};color:${darken(PRIORITY_HEX.high,0.35)}">${label}</span>`;
   }
   return `<span class="tag plain">${label}</span>`;
 }
 function dueChip(due){
   const hex = dueUrgencyHex(due);
-  if(hex) return `<span class="tag" style="background:${lighten(hex,0.82)};color:${hex}">Due ${fmtDate(due)}</span>`;
+  if(hex) return `<span class="tag" style="background:${lighten(hex,0.82)};color:${darken(hex,0.35)}">Due ${fmtDate(due)}</span>`;
   return `<span class="tag plain">Due ${fmtDate(due)}</span>`;
+}
+// Darkens a color toward black by the given amount (0-1) - used for tag
+// text, so it stays readable against the tag's pale tinted background
+// even when the assigned color itself is quite light.
+function darken(hex, amt){
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  const nr=Math.round(r*(1-amt)), ng=Math.round(g*(1-amt)), nb=Math.round(b*(1-amt));
+  return `rgb(${nr},${ng},${nb})`;
 }
 function lighten(hex, amt){
   const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
@@ -335,47 +355,57 @@ function taskCard(t){
   top.append(check, title, starBtn);
   div.append(top);
 
-  const projColor = t.project ? (projectColors[t.project]||DEFAULT_PROJECT_COLOR) : null;
-  const meta = document.createElement('div'); meta.className='meta';
-  meta.innerHTML =
-    (t.type==='work' && t.project ? `<span class="tag" style="background:${lighten(projColor,0.82)};color:${projColor}">${t.project}</span>` : '') +
-    (t.due? dueChip(t.due) :'')+
-    (t.planned ? plannedChip(t) : `<span class="tag plain">Not scheduled</span>`)+
-    (recurLabel(t)?`<span class="tag plain">${recurLabel(t)}</span>`:'')+
-    (t.quick?`<span class="tag quick">Quick</span>`:'')+
-    (t.labels||[]).map(l=>{ const c=labelColors[l]||DEFAULT_LABEL_COLOR; return `<span class="tag" style="background:${lighten(c,0.82)};color:${c}">#${l}</span>`; }).join('');
-  div.append(meta);
+  // "Simple view" hides everything below the checkbox/title/star - just the
+  // essentials, for scanning a long list quickly.
+  if(!filters.simpleView){
+    const projColor = t.project ? (projectColors[t.project]||DEFAULT_PROJECT_COLOR) : null;
+    const meta = document.createElement('div'); meta.className='meta';
+    meta.innerHTML =
+      (t.type==='work' && t.project ? `<span class="tag" style="background:${lighten(projColor,0.82)};color:${darken(projColor,0.35)}">${t.project}</span>` : '') +
+      (t.due? dueChip(t.due) :'')+
+      (t.planned ? plannedChip(t) : `<span class="tag plain">Not scheduled</span>`)+
+      (recurLabel(t)?`<span class="tag plain">${recurLabel(t)}</span>`:'')+
+      (t.quick?`<span class="tag quick">Quick</span>`:'')+
+      (t.labels||[]).map(l=>{ const c=labelColors[l]||DEFAULT_LABEL_COLOR; return `<span class="tag" style="background:${lighten(c,0.82)};color:${darken(c,0.35)}">#${l}</span>`; }).join('');
+    div.append(meta);
 
-  if(!t.done){
-    const actions = document.createElement('div'); actions.className='task-actions';
-    const prog = document.createElement('button'); prog.className='plan-btn'+(t.inProgress?' active':'');
-    prog.textContent = t.inProgress ? '● In progress' : 'Mark in progress';
-    prog.onclick = (e)=>{ e.stopPropagation(); t.inProgress = !t.inProgress; persist(); render(); };
-    // Skip/set-date and delete are icon buttons rather than text pills,
-    // to keep the card from getting cluttered with too much text.
-    const skipBtn = document.createElement('button'); skipBtn.className='icon-action';
-    skipBtn.textContent = '📅'; skipBtn.title = t.planned ? 'Skip to a different date' : 'Set a date';
-    skipBtn.onclick = (e)=>{ e.stopPropagation(); skipOpenId = (skipOpenId===t.id)?null:t.id; render(); };
-    const delBtn = document.createElement('button'); delBtn.className='icon-action icon-danger';
-    delBtn.textContent = '❌'; delBtn.title = 'Delete this task';
-    delBtn.onclick = (e)=>{
-      e.stopPropagation();
-      if(confirm('Delete "'+t.title+'"? This just removes this task - a repeating task won\'t create any further copies from it.')){
-        tasks = tasks.filter(x=>x.id!==t.id); persist(); render();
+    if(t.notes){
+      const notesEl = document.createElement('div'); notesEl.className='task-notes';
+      notesEl.textContent = t.notes;
+      div.append(notesEl);
+    }
+
+    if(!t.done){
+      const actions = document.createElement('div'); actions.className='task-actions';
+      const prog = document.createElement('button'); prog.className='plan-btn'+(t.inProgress?' active':'');
+      prog.textContent = t.inProgress ? '● In progress' : 'Mark in progress';
+      prog.onclick = (e)=>{ e.stopPropagation(); t.inProgress = !t.inProgress; persist(); render(); };
+      // Skip/set-date and delete are icon buttons rather than text pills,
+      // to keep the card from getting cluttered with too much text.
+      const skipBtn = document.createElement('button'); skipBtn.className='icon-action';
+      skipBtn.textContent = '⏩'; skipBtn.title = t.planned ? 'Skip to a different date' : 'Set a date';
+      skipBtn.onclick = (e)=>{ e.stopPropagation(); skipOpenId = (skipOpenId===t.id)?null:t.id; render(); };
+      const delBtn = document.createElement('button'); delBtn.className='icon-action icon-danger';
+      delBtn.textContent = '❌'; delBtn.title = 'Delete this task';
+      delBtn.onclick = (e)=>{
+        e.stopPropagation();
+        if(confirm('Delete "'+t.title+'"? This just removes this task - a repeating task won\'t create any further copies from it.')){
+          tasks = tasks.filter(x=>x.id!==t.id); persist(); render();
+        }
+      };
+      actions.append(prog, skipBtn, delBtn);
+      div.append(actions);
+
+      if(skipOpenId===t.id){
+        const row = document.createElement('div'); row.className='skip-row'; row.onclick=(e)=>e.stopPropagation();
+        const tmrw = document.createElement('button'); tmrw.className='plan-btn'; tmrw.textContent='Tomorrow';
+        tmrw.onclick = (e)=>{ e.stopPropagation(); skipTask(t, addDays(todayStr(),1)); skipOpenId=null; };
+        const inp = document.createElement('input'); inp.type='date'; inp.value = t.planned || todayStr();
+        const go = document.createElement('button'); go.className='finish-btn'; go.textContent='Move';
+        go.onclick = (e)=>{ e.stopPropagation(); skipTask(t, inp.value); skipOpenId=null; };
+        row.append(tmrw, inp, go);
+        div.append(row);
       }
-    };
-    actions.append(prog, skipBtn, delBtn);
-    div.append(actions);
-
-    if(skipOpenId===t.id){
-      const row = document.createElement('div'); row.className='skip-row'; row.onclick=(e)=>e.stopPropagation();
-      const tmrw = document.createElement('button'); tmrw.className='plan-btn'; tmrw.textContent='Tomorrow';
-      tmrw.onclick = (e)=>{ e.stopPropagation(); skipTask(t, addDays(todayStr(),1)); skipOpenId=null; };
-      const inp = document.createElement('input'); inp.type='date'; inp.value = t.planned || todayStr();
-      const go = document.createElement('button'); go.className='finish-btn'; go.textContent='Move';
-      go.onclick = (e)=>{ e.stopPropagation(); skipTask(t, inp.value); skipOpenId=null; };
-      row.append(tmrw, inp, go);
-      div.append(row);
     }
   }
   return div;
@@ -391,6 +421,8 @@ function renderFilterChips(container){
   container.append(mk(projLabel, filters.projects.length>0 || openFilterPicker==='project', ()=>{ openFilterPicker = openFilterPicker==='project'?null:'project'; render(); }));
   const tagLabel = 'Tags' + (filters.labels.length ? ` (${filters.labels.length})` : '');
   container.append(mk(tagLabel, filters.labels.length>0 || openFilterPicker==='label', ()=>{ openFilterPicker = openFilterPicker==='label'?null:'label'; render(); }));
+  container.append(mk('No planned date', filters.unplannedOnly, ()=>{ filters.unplannedOnly=!filters.unplannedOnly; render(); }));
+  container.append(mk('Simple view', filters.simpleView, ()=>{ filters.simpleView=!filters.simpleView; render(); }));
 }
 
 // The expandable panel that opens under the Projects/Tags buttons: pick
@@ -708,14 +740,14 @@ document.querySelectorAll('nav button[data-view]').forEach(b=>b.onclick=()=>{ vi
    ================================================================ */
 function csvEscape(v){ v=(v===null||v===undefined)?'':String(v); return '"'+v.replace(/"/g,'""')+'"'; }
 document.getElementById('exportBtn').onclick = ()=>{
-  const cols = ['title','type','project','priority','planned','endDate','due','recur_summary','labels','inProgress','quick','done','completedAt'];
+  const cols = ['title','type','project','priority','planned','endDate','due','recur_summary','labels','inProgress','quick','done','completedAt','notes'];
   const rows = [cols.join(',')];
   tasks.forEach(t=>{
     rows.push([
       csvEscape(t.title), csvEscape(t.type), csvEscape(t.project),
       csvEscape(PRIORITY_LABELS[t.priority]), csvEscape(t.planned), csvEscape(t.endDate), csvEscape(t.due),
       csvEscape(recurLabel(t)), csvEscape((t.labels||[]).join('; ')),
-      csvEscape(t.inProgress), csvEscape(t.quick), csvEscape(t.done), csvEscape(t.completedAt)
+      csvEscape(t.inProgress), csvEscape(t.quick), csvEscape(t.done), csvEscape(t.completedAt), csvEscape(t.notes)
     ].join(','));
   });
   const blob = new Blob([rows.join('\n')], {type:'text/csv'});
@@ -779,7 +811,16 @@ document.querySelectorAll('.seg').forEach(s=>{
     if(s.id==='f-recurFreq' || s.id==='f-recurMode' || s.id==='f-weekday') updateRecurVisibility();
   });
 });
-document.getElementById('f-later').addEventListener('change', updateDateFieldsVisibility);
+document.getElementById('f-later').addEventListener('change', (e)=>{
+  // Unchecking "plan later" should always land on today's date by default,
+  // whether this is a brand-new task or an existing one (like a quick task)
+  // that never had a planned date to begin with.
+  if(!e.target.checked){
+    const plannedInp = document.getElementById('f-planned');
+    if(!plannedInp.value) plannedInp.value = todayStr();
+  }
+  updateDateFieldsVisibility();
+});
 document.getElementById('f-spans').addEventListener('change', updateDateFieldsVisibility);
 document.getElementById('f-monthday').addEventListener('input', updateRecurVisibility);
 
@@ -833,7 +874,7 @@ function renderLabelChips(){
   });
 }
 
-const TOTAL_STEPS = 7;
+const TOTAL_STEPS = 8;
 let currentStep = 1;
 // Builds the vertical timeline of step dots below Back/Next/Save.
 // Clicking any dot/label jumps straight to that step.
@@ -907,6 +948,7 @@ function openSheet(task){
   updateRecurVisibility();
 
   document.getElementById('f-labels').value='';
+  document.getElementById('f-notes').value = task && task.notes ? task.notes : '';
   selectedLabels = new Set(task && task.labels ? task.labels : []);
   const dl = document.getElementById('projList'); dl.innerHTML = projectList().map(p=>`<option value="${p}">`).join('');
   renderProjectChips();
@@ -939,7 +981,8 @@ document.getElementById('saveBtn').onclick = ()=>{
     priority: segVal('f-priority'),
     planned: plannedVal, endDate: endVal,
     due: document.getElementById('f-due').value || null,
-    recur, labels, quick:false
+    recur, labels, quick:false,
+    notes: document.getElementById('f-notes').value
   };
 
   let savedTask;
