@@ -1042,5 +1042,13 @@ window.addEventListener('error', (e)=>{
   console.error('Uncaught error:', e.error || e.message);
   showToast('Error: ' + (e.message || 'something went wrong'));
 });
+// Promises that fail without a .catch() attached (common inside Firebase's
+// own internals, since it's Promise-heavy) don't trigger the 'error' event
+// above at all - they need their own separate listener.
+window.addEventListener('unhandledrejection', (e)=>{
+  const reason = e.reason;
+  console.error('Unhandled promise rejection:', reason);
+  showToast('Error: ' + (reason && (reason.message || reason.code) ? (reason.code||'')+' '+(reason.message||'') : String(reason)));
+});
 
 initApp();
