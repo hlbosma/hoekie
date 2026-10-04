@@ -243,14 +243,32 @@ function completeTask(t){
   }
   persist(); render();
 }
-// Briefly shows a message at the bottom of the screen, then fades it out on its own.
+// Briefly shows a message at the bottom of the screen, then fades it out on
+// its own. If an action is given ({label, onClick}), an Undo-style button
+// appears alongside the message, and the toast stays up longer so there's
+// time to tap it.
 let toastTimer = null;
-function showToast(message){
+function showToast(message, action){
   const el = document.getElementById('toast');
-  el.textContent = message;
+  el.innerHTML = '';
+  const span = document.createElement('span'); span.textContent = message;
+  el.append(span);
+  if(action){
+    const btn = document.createElement('button'); btn.className='toast-undo'; btn.textContent = action.label || 'Undo';
+    btn.onclick = ()=>{ action.onClick(); el.classList.remove('show'); clearTimeout(toastTimer); };
+    el.append(btn);
+  }
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>el.classList.remove('show'), 2600);
+  toastTimer = setTimeout(()=>el.classList.remove('show'), action ? 6000 : 2600);
+}
+// Deletes one task immediately (no confirmation dialog needed - this
+// gives you a few seconds to undo instead), and offers an Undo button
+// that puts it straight back.
+function deleteTaskWithUndo(t){
+  tasks = tasks.filter(x=>x.id!==t.id);
+  persist(); render();
+  showToast('Deleted "'+t.title+'"', { label:'Undo', onClick: ()=>{ tasks.push(t); persist(); render(); } });
 }
 function skipTask(t, newDate){
   const span = t.endDate ? daysBetween(t.planned, t.endDate) : 0;
@@ -387,12 +405,7 @@ function taskCard(t){
       skipBtn.onclick = (e)=>{ e.stopPropagation(); skipOpenId = (skipOpenId===t.id)?null:t.id; render(); };
       const delBtn = document.createElement('button'); delBtn.className='icon-action icon-danger';
       delBtn.textContent = '❌'; delBtn.title = 'Delete this task';
-      delBtn.onclick = (e)=>{
-        e.stopPropagation();
-        if(confirm('Delete "'+t.title+'"? This just removes this task - a repeating task won\'t create any further copies from it.')){
-          tasks = tasks.filter(x=>x.id!==t.id); persist(); render();
-        }
-      };
+      delBtn.onclick = (e)=>{ e.stopPropagation(); deleteTaskWithUndo(t); };
       actions.append(prog, skipBtn, delBtn);
       div.append(actions);
 
@@ -583,11 +596,7 @@ function renderTable(main, list){
     };
 
     const delBtn = document.createElement('button'); delBtn.className='del-btn'; delBtn.textContent='Delete';
-    delBtn.onclick = ()=>{
-      if(confirm('Delete "'+t.title+'"? A repeating task won\'t create any further copies from it.')){
-        tasks = tasks.filter(x=>x.id!==t.id); persist(); render();
-      }
-    };
+    delBtn.onclick = ()=>deleteTaskWithUndo(t);
 
     [favChk,titleInp,typeSel,projSel,prSel,plannedInp,endInp,dueInp,labelsInp,progChk,doneChk,delBtn].forEach(el=>tr.append(td(el)));
     tbody.append(tr);
@@ -613,9 +622,10 @@ function renderArchive(main){
   const delAll = document.createElement('button'); delAll.className='del-btn'; delAll.style.marginBottom='12px';
   delAll.textContent = 'Delete all archived tasks';
   delAll.onclick = ()=>{
-    if(confirm('Permanently delete all '+done.length+' finished tasks? Unfinished tasks are never affected by this.')){
-      tasks = tasks.filter(t=>!t.done); persist(); render();
-    }
+    const removed = tasks.filter(t=>t.done);
+    tasks = tasks.filter(t=>!t.done);
+    persist(); render();
+    showToast('Deleted '+removed.length+' archived tasks', { label:'Undo', onClick: ()=>{ tasks.push(...removed); persist(); render(); } });
   };
   main.append(delAll);
   const note = document.createElement('div'); note.className='hint'; note.style.marginBottom='10px';
@@ -626,7 +636,7 @@ function renderArchive(main){
     const info = document.createElement('div'); info.className='info';
     info.innerHTML = `<div class="title">${t.title}</div><div class="date">Finished ${fmtDate(t.completedAt)}</div>`;
     const del = document.createElement('button'); del.className='del-btn'; del.textContent='Delete';
-    del.onclick = ()=>{ if(confirm('Delete "'+t.title+'" permanently?')){ tasks = tasks.filter(x=>x.id!==t.id); persist(); render(); } };
+    del.onclick = ()=>deleteTaskWithUndo(t);
     row.append(info, del);
     main.append(row);
   });
