@@ -112,7 +112,12 @@ function loadLocal(){
 function persist(){
   const payload = {tasks, labelColors, projectColors};
   localStorage.setItem('vooruit_tasks', JSON.stringify(payload));
-  if(fsDoc && !applyingRemote){ fsDoc.set(payload).catch(()=>{}); }
+  if(fsDoc && !applyingRemote){
+    fsDoc.set(payload).catch(err=>{
+      console.error('Firestore write failed:', err);
+      showToast('Sync error saving: '+err.message);
+    });
+  }
 }
 function cleanupOldArchive(){
   const cutoff = addDays(todayStr(), -30);
@@ -128,17 +133,23 @@ function startApp(){
 }
 function watchTasks(userUid){
   fsDoc = firebase.firestore().collection('users').doc(userUid).collection('planner').doc('tasks');
-  unsub = fsDoc.onSnapshot(snap=>{
-    applyingRemote = true;
-    const d = snap.exists ? snap.data() : {};
-    tasks = (d.tasks||[]).map(migrateTask);
-    labelColors = d.labelColors || {};
-    projectColors = d.projectColors || {};
-    localStorage.setItem('vooruit_tasks', JSON.stringify({tasks,labelColors,projectColors}));
-    applyingRemote = false;
-    cleanupOldArchive();
-    render();
-  });
+  unsub = fsDoc.onSnapshot(
+    snap=>{
+      applyingRemote = true;
+      const d = snap.exists ? snap.data() : {};
+      tasks = (d.tasks||[]).map(migrateTask);
+      labelColors = d.labelColors || {};
+      projectColors = d.projectColors || {};
+      localStorage.setItem('vooruit_tasks', JSON.stringify({tasks,labelColors,projectColors}));
+      applyingRemote = false;
+      cleanupOldArchive();
+      render();
+    },
+    // Previously a failed read (wrong permissions, a stale token, etc.)
+    // failed completely silently - the screen just stayed empty with no
+    // clue why. Now the actual error shows up as a toast.
+    error=>{ console.error('Firestore read failed:', error); showToast('Sync error loading tasks: '+error.message); }
+  );
   startApp();
 }
 function authErr(msg){ document.getElementById('authError').textContent = msg; }
@@ -151,7 +162,11 @@ function initApp(){
   }
   firebase.initializeApp(FIREBASE_CONFIG);
   firebase.auth().onAuthStateChanged(user=>{
-    if(user){ watchTasks(user.uid); }
+    if(user){
+      const emailEl = document.getElementById('currentUserEmail');
+      emailEl.textContent = user.email; emailEl.style.display = 'inline-block';
+      watchTasks(user.uid);
+    }
     else { if(unsub){ unsub(); unsub=null; } document.getElementById('authScreen').style.display='flex'; }
   });
   document.getElementById('authSignin').onclick = ()=>{
@@ -1012,5 +1027,20 @@ document.getElementById('saveBtn').onclick = ()=>{
   sheetWrap.classList.remove('open');
   render();
 };
+
+/* ================================================================
+   GLOBAL ERROR CATCHER
+   If something throws an unexpected error anywhere in the app (a
+   button whose handler crashes partway through, for instance), the
+   usual behavior is: nothing visibly happens, the button just looks
+   unresponsive, and there's no way to know why without a developer
+   console. This catches any such error and shows it as a toast, so
+   it's visible immediately, even on a device that's hard to debug
+   (like an iPad with no developer tools attached).
+   ================================================================ */
+window.addEventListener('error', (e)=>{
+  console.error('Uncaught error:', e.error || e.message);
+  showToast('Error: ' + (e.message || 'something went wrong'));
+});
 
 initApp();
