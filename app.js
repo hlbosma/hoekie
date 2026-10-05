@@ -1,4 +1,17 @@
 /* ================================================================
+   FIREBASE - modern modular SDK (not the older "compat" build)
+   The compat build kept the old-style firebase.auth()/.firestore()
+   API for easy migration from very old projects, but it's tested far
+   less rigorously on edge-case browsers. A specific, documented bug
+   in it ("_onlineComponents is undefined") was breaking this app on
+   iPad Safari. Importing the real modular functions instead avoids
+   that whole compatibility shim.
+   ================================================================ */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+/* ================================================================
    CONFIGURATION
    ================================================================ */
 const FIREBASE_CONFIG = {
@@ -23,6 +36,7 @@ let editingId = null;
 let editMode = 'wizard';
 let selectedLabels = new Set();
 let fsDoc = null;
+let auth = null;
 let unsub = null;
 let applyingRemote = false;
 let view = 'today';
@@ -113,7 +127,7 @@ function persist(){
   const payload = {tasks, labelColors, projectColors};
   localStorage.setItem('vooruit_tasks', JSON.stringify(payload));
   if(fsDoc && !applyingRemote){
-    fsDoc.set(payload).catch(err=>{
+    setDoc(fsDoc, payload).catch(err=>{
       console.error('Firestore write failed:', err);
       showToast('Sync error saving: '+err.message);
     });
@@ -132,11 +146,15 @@ function startApp(){
   render();
 }
 function watchTasks(userUid){
-  fsDoc = firebase.firestore().collection('users').doc(userUid).collection('planner').doc('tasks');
-  unsub = fsDoc.onSnapshot(
+  const db = getFirestore();
+  fsDoc = doc(db, 'users', userUid, 'planner', 'tasks');
+  unsub = onSnapshot(
+    fsDoc,
     snap=>{
       applyingRemote = true;
-      const d = snap.exists ? snap.data() : {};
+      // Note: in the modern SDK, exists is a METHOD (snap.exists()), not a
+      // plain property like the old compat build used - easy thing to miss.
+      const d = snap.exists() ? snap.data() : {};
       tasks = (d.tasks||[]).map(migrateTask);
       labelColors = d.labelColors || {};
       projectColors = d.projectColors || {};
@@ -158,10 +176,19 @@ function initApp(){
     const loaded = loadLocal();
     tasks = loaded.tasks; labelColors = loaded.labelColors; projectColors = loaded.projectColors;
     document.getElementById('setupScreen').style.display = 'flex';
+    // Wired up here (instead of an inline onclick in the HTML) because
+    // app.js is now a module - module-level functions aren't automatically
+    // global, so an inline onclick="...startApp()" in the HTML can no
+    // longer see this function directly.
+    document.getElementById('setupContinueBtn').onclick = ()=>{
+      document.getElementById('setupScreen').style.display='none';
+      startApp();
+    };
     return;
   }
-  firebase.initializeApp(FIREBASE_CONFIG);
-  firebase.auth().onAuthStateChanged(user=>{
+  const firebaseApp = initializeApp(FIREBASE_CONFIG);
+  auth = getAuth(firebaseApp);
+  onAuthStateChanged(auth, user=>{
     if(user){
       const emailEl = document.getElementById('currentUserEmail');
       emailEl.textContent = user.email; emailEl.style.display = 'inline-block';
@@ -171,13 +198,13 @@ function initApp(){
   });
   document.getElementById('authSignin').onclick = ()=>{
     const email=document.getElementById('auth-email').value.trim(), pw=document.getElementById('auth-password').value;
-    authErr(''); firebase.auth().signInWithEmailAndPassword(email, pw).catch(e=>authErr(e.message));
+    authErr(''); signInWithEmailAndPassword(auth, email, pw).catch(e=>authErr(e.message));
   };
   document.getElementById('authSignup').onclick = ()=>{
     const email=document.getElementById('auth-email').value.trim(), pw=document.getElementById('auth-password').value;
-    authErr(''); firebase.auth().createUserWithEmailAndPassword(email, pw).catch(e=>authErr(e.message));
+    authErr(''); createUserWithEmailAndPassword(auth, email, pw).catch(e=>authErr(e.message));
   };
-  document.getElementById('signOutBtn').onclick = ()=> firebase.auth().signOut();
+  document.getElementById('signOutBtn').onclick = ()=> signOut(auth);
 }
 
 /* ================================================================

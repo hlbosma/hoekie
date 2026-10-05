@@ -7,12 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<!-- crossorigin="anonymous" lets real error messages through from these
-     CDN-hosted files - without it, browsers hide the actual error behind
-     the generic, useless "Script error." for any script from another site. -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.3.0/firebase-app-compat.min.js" crossorigin="anonymous"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.3.0/firebase-auth-compat.min.js" crossorigin="anonymous"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.3.0/firebase-firestore-compat.min.js" crossorigin="anonymous"></script>
+<!-- No separate Firebase <script> tags needed anymore - app.js now
+     imports the modern Firebase SDK directly (see the top of app.js). -->
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -21,7 +17,7 @@
   <div class="auth-box">
     <div class="brand">Hoekie</div>
     <div class="setup-banner">No Firebase config found yet, so this copy will only save tasks in this one browser. Fill in <code>FIREBASE_CONFIG</code> near the top of the file's script to turn on cross-device sync.</div>
-    <div class="sheet-actions"><button style="width:100%;background:var(--ink);color:var(--paper);border:none;border-radius:var(--radius);padding:12px;font-weight:700;cursor:pointer;font-family:inherit" onclick="document.getElementById('setupScreen').style.display='none'; startApp();">Continue without sync</button></div>
+    <div class="sheet-actions"><button id="setupContinueBtn" style="width:100%;background:var(--ink);color:var(--paper);border:none;border-radius:var(--radius);padding:12px;font-weight:700;cursor:pointer;font-family:inherit">Continue without sync</button></div>
   </div>
 </div>
 
@@ -186,6 +182,9 @@
   </div>
 </div>
 
-<script src="app.js" defer></script>
+<!-- type="module" is required because app.js now uses "import" statements
+     to load Firebase - without it, the browser won't understand "import"
+     and the whole file will fail silently. Module scripts defer by default. -->
+<script type="module" src="app.js"></script>
 </body>
 </html>
