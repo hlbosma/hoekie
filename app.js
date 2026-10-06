@@ -9,7 +9,7 @@
    ================================================================ */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, memoryLocalCache, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ================================================================
    CONFIGURATION
@@ -37,6 +37,7 @@ let editMode = 'wizard';
 let selectedLabels = new Set();
 let fsDoc = null;
 let auth = null;
+let firebaseApp = null;
 let unsub = null;
 let applyingRemote = false;
 let view = 'today';
@@ -146,7 +147,20 @@ function startApp(){
   render();
 }
 function watchTasks(userUid){
-  const db = getFirestore();
+  // Two settings aimed squarely at the "_onlineComponents" failure:
+  // - memoryLocalCache: skips Firestore's own IndexedDB-based cache
+  //   entirely (we already keep our own copy in localStorage, so this
+  //   isn't a real loss of functionality).
+  // - experimentalAutoDetectLongPolling: Firestore's live connection
+  //   normally streams over a technique called WebChannel, which has a
+  //   history of breaking on iOS Safari under certain network/privacy
+  //   conditions ("_onlineComponents" is part of that connection-
+  //   management code). This makes it fall back to plain long-polling
+  //   automatically whenever that streaming approach doesn't work.
+  const db = initializeFirestore(firebaseApp, {
+    localCache: memoryLocalCache(),
+    experimentalAutoDetectLongPolling: true
+  });
   fsDoc = doc(db, 'users', userUid, 'planner', 'tasks');
   unsub = onSnapshot(
     fsDoc,
@@ -186,7 +200,7 @@ function initApp(){
     };
     return;
   }
-  const firebaseApp = initializeApp(FIREBASE_CONFIG);
+  firebaseApp = initializeApp(FIREBASE_CONFIG);
   auth = getAuth(firebaseApp);
   onAuthStateChanged(auth, user=>{
     if(user){
