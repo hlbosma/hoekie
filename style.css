@@ -22,6 +22,11 @@ nav button{font:inherit;font-weight:600;font-size:13px;border:1px solid var(--li
 nav button.active{background:var(--ink);color:var(--paper);border-color:var(--ink);}
 .nav-right{margin-left:auto;display:flex;gap:6px;}
 .icon-btn{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);padding:7px 10px;border-radius:var(--radius);cursor:pointer;}
+/* The hamburger's dropdown: email, CSV export, sign out - replaces three
+   separate header buttons with one menu, so the email isn't on display. */
+.dropdown-menu{position:absolute;top:100%;right:0;margin-top:6px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 4px 14px rgba(0,0,0,.15);padding:8px;display:flex;flex-direction:column;gap:2px;min-width:170px;z-index:15;}
+.dropdown-menu button{text-align:left;background:none;border:none;padding:9px 10px;font:inherit;font-size:13px;color:var(--ink);border-radius:8px;cursor:pointer;}
+.dropdown-email{font-size:11px;color:var(--ink-soft);padding:6px 10px 10px;border-bottom:1px solid var(--line);margin-bottom:4px;word-break:break-all;}
 
 main{max-width:960px;margin:0 auto;padding:16px 16px 90px;}
 
@@ -165,3 +170,14 @@ table.tasktable input[type=checkbox]{min-width:auto;width:16px;height:16px;}
 .toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(10px);background:var(--ink);color:var(--paper);font-size:13px;font-weight:600;padding:10px 16px;border-radius:var(--radius);box-shadow:0 4px 14px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:opacity .2s ease, transform .2s ease;z-index:30;white-space:nowrap;display:flex;align-items:center;gap:12px;}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto;}
 .toast-undo{background:none;border:none;color:#fff;text-decoration:underline;font:inherit;font-weight:700;cursor:pointer;padding:0;}
+
+/* Today tab: board on the left, a notes box for the day on the right */
+.today-layout{display:flex;gap:16px;align-items:flex-start;}
+.today-main{flex:1;min-width:0;}
+.today-notes{width:260px;flex:none;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;position:sticky;top:90px;}
+.today-notes label{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:8px;}
+.today-notes textarea{width:100%;min-height:220px;}
+@media (max-width:860px){
+  .today-layout{flex-direction:column;}
+  .today-notes{width:100%;position:static;}
+}

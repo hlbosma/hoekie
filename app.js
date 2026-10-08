@@ -32,6 +32,7 @@ const PALETTE = ['#D3C2CD','#849E15','#92A2A6','#B28622','#F8CABA','#D8560E','#E
 let tasks = [];
 let labelColors = {};
 let projectColors = {};
+let dailyNotes = {}; // { "2026-10-04": "free text for that day", ... } - the Today sidebar
 let editingId = null;
 let editMode = 'wizard';
 let selectedLabels = new Set();
@@ -120,12 +121,12 @@ function migrateTask(t){
 function loadLocal(){
   try{
     const raw = JSON.parse(localStorage.getItem('vooruit_tasks')||'{}');
-    if(Array.isArray(raw)) return {tasks: raw.map(migrateTask), labelColors:{}, projectColors:{}};
-    return {tasks:(raw.tasks||[]).map(migrateTask), labelColors: raw.labelColors||{}, projectColors: raw.projectColors||{}};
-  }catch(e){ return {tasks:[], labelColors:{}, projectColors:{}}; }
+    if(Array.isArray(raw)) return {tasks: raw.map(migrateTask), labelColors:{}, projectColors:{}, dailyNotes:{}};
+    return {tasks:(raw.tasks||[]).map(migrateTask), labelColors: raw.labelColors||{}, projectColors: raw.projectColors||{}, dailyNotes: raw.dailyNotes||{}};
+  }catch(e){ return {tasks:[], labelColors:{}, projectColors:{}, dailyNotes:{}}; }
 }
 function persist(){
-  const payload = {tasks, labelColors, projectColors};
+  const payload = {tasks, labelColors, projectColors, dailyNotes};
   localStorage.setItem('vooruit_tasks', JSON.stringify(payload));
   if(fsDoc && !applyingRemote){
     setDoc(fsDoc, payload).catch(err=>{
@@ -142,7 +143,7 @@ function cleanupOldArchive(){
 }
 function startApp(){
   document.getElementById('authScreen').style.display = 'none';
-  document.getElementById('signOutBtn').style.display = firebaseConfigured ? 'inline-block' : 'none';
+  document.getElementById('signOutBtn').style.display = firebaseConfigured ? 'block' : 'none';
   cleanupOldArchive();
   render();
 }
@@ -172,7 +173,8 @@ function watchTasks(userUid){
       tasks = (d.tasks||[]).map(migrateTask);
       labelColors = d.labelColors || {};
       projectColors = d.projectColors || {};
-      localStorage.setItem('vooruit_tasks', JSON.stringify({tasks,labelColors,projectColors}));
+      dailyNotes = d.dailyNotes || {};
+      localStorage.setItem('vooruit_tasks', JSON.stringify({tasks,labelColors,projectColors,dailyNotes}));
       applyingRemote = false;
       cleanupOldArchive();
       render();
@@ -188,7 +190,7 @@ function authErr(msg){ document.getElementById('authError').textContent = msg; }
 function initApp(){
   if(!firebaseConfigured){
     const loaded = loadLocal();
-    tasks = loaded.tasks; labelColors = loaded.labelColors; projectColors = loaded.projectColors;
+    tasks = loaded.tasks; labelColors = loaded.labelColors; projectColors = loaded.projectColors; dailyNotes = loaded.dailyNotes;
     document.getElementById('setupScreen').style.display = 'flex';
     // Wired up here (instead of an inline onclick in the HTML) because
     // app.js is now a module - module-level functions aren't automatically
@@ -205,7 +207,7 @@ function initApp(){
   onAuthStateChanged(auth, user=>{
     if(user){
       const emailEl = document.getElementById('currentUserEmail');
-      emailEl.textContent = user.email; emailEl.style.display = 'inline-block';
+      emailEl.textContent = user.email; emailEl.style.display = 'block';
       watchTasks(user.uid);
     }
     else { if(unsub){ unsub(); unsub=null; } document.getElementById('authScreen').style.display='flex'; }
@@ -218,7 +220,7 @@ function initApp(){
     const email=document.getElementById('auth-email').value.trim(), pw=document.getElementById('auth-password').value;
     authErr(''); createUserWithEmailAndPassword(auth, email, pw).catch(e=>authErr(e.message));
   };
-  document.getElementById('signOutBtn').onclick = ()=> signOut(auth);
+  document.getElementById('signOutBtn').onclick = ()=>{ signOut(auth); closeDropdownMenu(); };
 }
 
 /* ================================================================
@@ -316,7 +318,7 @@ function showToast(message, action){
   }
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>el.classList.remove('show'), action ? 6000 : 2600);
+  toastTimer = setTimeout(()=>el.classList.remove('show'), action ? 9000 : 4500);
 }
 // Deletes one task immediately (no confirmation dialog needed - this
 // gives you a few seconds to undo instead), and offers an Undo button
@@ -778,10 +780,28 @@ function render(){
   if(view==='quick'){ renderQuick(main); return; }
   if(view==='tags'){ renderTags(main); return; }
 
+  // The Today tab gets a two-column layout: the board on the left, and a
+  // free-text notes box for the day's meetings/appointments on the right.
+  // Every other tab renders straight into "main" as before.
+  let target = main;
+  if(view==='today'){
+    const layout = document.createElement('div'); layout.className='today-layout';
+    target = document.createElement('div'); target.className='today-main';
+    const sidebar = document.createElement('div'); sidebar.className='today-notes';
+    sidebar.innerHTML = '<label>Meetings & appointments today</label>';
+    const ta = document.createElement('textarea');
+    ta.placeholder = 'Jot down anything for today...';
+    ta.value = dailyNotes[todayStr()] || '';
+    ta.onchange = ()=>{ dailyNotes[todayStr()] = ta.value; persist(); };
+    sidebar.append(ta);
+    layout.append(target, sidebar);
+    main.append(layout);
+  }
+
   const chipsWrap = document.createElement('div'); chipsWrap.className='filters';
   renderFilterChips(chipsWrap);
-  main.append(chipsWrap);
-  renderFilterPicker(main);
+  target.append(chipsWrap);
+  renderFilterPicker(target);
 
   let list = tasks.filter(t=>!t.quick).filter(passesFilters);
   if(view==='today') list = list.filter(isTodayOrOverdue);
@@ -789,15 +809,15 @@ function render(){
   // it shows everything not excluded by the chips above, today included.
 
   if(view==='all'){
-    if(list.length===0){ const e=document.createElement('div'); e.className='empty'; e.textContent='No tasks match these filters.'; main.append(e); }
-    else renderTable(main, list);
+    if(list.length===0){ const e=document.createElement('div'); e.className='empty'; e.textContent='No tasks match these filters.'; target.append(e); }
+    else renderTable(target, list);
     return;
   }
   if(list.length===0){
     const e=document.createElement('div'); e.className='empty';
     e.textContent = view==='today' ? 'Nothing planned for today.' : 'No tasks match these filters.';
-    main.append(e);
-  } else { renderBoard(main, list); }
+    target.append(e);
+  } else { renderBoard(target, list); }
 }
 document.querySelectorAll('nav button[data-view]').forEach(b=>b.onclick=()=>{ view=b.dataset.view; render(); });
 
@@ -820,7 +840,24 @@ document.getElementById('exportBtn').onclick = ()=>{
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href=url; a.download='hoekie-tasks-'+todayStr()+'.csv';
   document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  closeDropdownMenu();
 };
+
+/* ================================================================
+   HEADER DROPDOWN MENU (hamburger button)
+   Holds the account email, CSV export, and sign out - kept out of
+   the header itself so the email isn't on permanent display.
+   ================================================================ */
+function closeDropdownMenu(){ document.getElementById('dropdownMenu').style.display = 'none'; }
+document.getElementById('menuBtn').onclick = (e)=>{
+  e.stopPropagation();
+  const menu = document.getElementById('dropdownMenu');
+  menu.style.display = menu.style.display==='none' ? 'flex' : 'none';
+};
+document.addEventListener('click', (e)=>{
+  const menu = document.getElementById('dropdownMenu');
+  if(menu.style.display!=='none' && !menu.contains(e.target) && e.target.id!=='menuBtn') closeDropdownMenu();
+});
 
 /* ================================================================
    QUICK-ADD
@@ -889,6 +926,9 @@ document.getElementById('f-later').addEventListener('change', (e)=>{
 });
 document.getElementById('f-spans').addEventListener('change', updateDateFieldsVisibility);
 document.getElementById('f-monthday').addEventListener('input', updateRecurVisibility);
+document.getElementById('f-plannedTomorrow').addEventListener('click', ()=>{
+  document.getElementById('f-planned').value = addDays(todayStr(), 1);
+});
 
 function updateDateFieldsVisibility(){
   const later = document.getElementById('f-later').checked;
@@ -991,6 +1031,7 @@ function openSheet(task){
   }
   document.getElementById('sheetTitle').textContent = task ? 'Edit task' : 'New task';
   document.getElementById('f-title').value = task ? task.title : '';
+  document.getElementById('f-favorite').checked = task ? !!task.favorite : false;
   seg('f-type', task ? task.type : 'personal');
   document.getElementById('f-projectWrap').style.display = (task?task.type:'personal')==='work' ? 'block':'none';
   document.getElementById('f-project').value = task && task.project ? task.project : '';
@@ -1048,7 +1089,8 @@ document.getElementById('saveBtn').onclick = ()=>{
     planned: plannedVal, endDate: endVal,
     due: document.getElementById('f-due').value || null,
     recur, labels, quick:false,
-    notes: document.getElementById('f-notes').value
+    notes: document.getElementById('f-notes').value,
+    favorite: document.getElementById('f-favorite').checked
   };
 
   let savedTask;

@@ -46,10 +46,13 @@
     <button data-view="quick" style="position:relative">Quick<span class="badge" id="quickBadge" style="display:none"></span></button>
     <button data-view="tags">Tags & Projects</button>
     <button data-view="archive">Archive</button>
-    <div class="nav-right">
-      <button class="icon-btn" id="exportBtn" title="Download all tasks as CSV">⬇ CSV</button>
-      <span class="icon-btn" id="currentUserEmail" style="display:none;cursor:default"></span>
-      <button class="icon-btn" id="signOutBtn" style="display:none">Sign out</button>
+    <div class="nav-right" style="position:relative">
+      <button class="icon-btn" id="menuBtn" title="Menu">☰</button>
+      <div class="dropdown-menu" id="dropdownMenu" style="display:none">
+        <div class="dropdown-email" id="currentUserEmail" style="display:none"></div>
+        <button id="exportBtn">⬇ Export CSV</button>
+        <button id="signOutBtn" style="display:none">Sign out</button>
+      </div>
     </div>
   </nav>
 </header>
@@ -81,6 +84,7 @@
     <div class="step" data-step="1">
       <label>Title</label>
       <input type="text" id="f-title" placeholder="What needs doing?">
+      <div class="checkbox-row"><input type="checkbox" id="f-favorite"><label style="margin:0" for="f-favorite">⭐ Mark as favorite</label></div>
     </div>
 
     <div class="step" data-step="2">
@@ -111,7 +115,10 @@
       <div class="checkbox-row"><input type="checkbox" id="f-later"><label style="margin:0" for="f-later">I'll plan the date later</label></div>
       <div id="f-dateFields">
         <label>Planned date</label>
-        <input type="date" id="f-planned">
+        <div class="row2">
+          <input type="date" id="f-planned">
+          <button type="button" id="f-plannedTomorrow" class="plan-btn" style="flex:none">Tomorrow</button>
+        </div>
         <div class="checkbox-row"><input type="checkbox" id="f-spans"><label style="margin:0" for="f-spans">This task spans multiple days</label></div>
         <div id="f-endWrap" style="display:none">
           <label>End date</label>
