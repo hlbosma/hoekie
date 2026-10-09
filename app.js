@@ -32,7 +32,17 @@ const PALETTE = ['#D3C2CD','#849E15','#92A2A6','#B28622','#F8CABA','#D8560E','#E
 let tasks = [];
 let labelColors = {};
 let projectColors = {};
-let dailyNotes = {}; // { "2026-10-04": "free text for that day", ... } - the Today sidebar
+// Meetings & appointments shown in the Today sidebar. One simple list that
+// stays put until you press "Clear day" (so a meeting whose notes you still
+// owe from yesterday doesn't silently vanish at midnight). Each entry:
+// { id, date (the day it was added), time ("14:30" or ""), title,
+//   passed (meeting is over), notesDone (your notes are written down) }
+let meetings = [];
+// The sidebar used to be one free-text box per day. That old data is only
+// read once, to convert it into meeting rows (see migrateDailyNotes), then dropped.
+let dailyNotes = {};
+// Whether the sidebar is currently popped out. Remembered on this device only.
+let meetingsOpen = localStorage.getItem('hoekie_meetings_open') === '1';
 let editingId = null;
 let editMode = 'wizard';
 let selectedLabels = new Set();
@@ -121,12 +131,27 @@ function migrateTask(t){
 function loadLocal(){
   try{
     const raw = JSON.parse(localStorage.getItem('vooruit_tasks')||'{}');
-    if(Array.isArray(raw)) return {tasks: raw.map(migrateTask), labelColors:{}, projectColors:{}, dailyNotes:{}};
-    return {tasks:(raw.tasks||[]).map(migrateTask), labelColors: raw.labelColors||{}, projectColors: raw.projectColors||{}, dailyNotes: raw.dailyNotes||{}};
-  }catch(e){ return {tasks:[], labelColors:{}, projectColors:{}, dailyNotes:{}}; }
+    if(Array.isArray(raw)) return {tasks: raw.map(migrateTask), labelColors:{}, projectColors:{}, meetings:[], dailyNotes:{}};
+    return {tasks:(raw.tasks||[]).map(migrateTask), labelColors: raw.labelColors||{}, projectColors: raw.projectColors||{}, meetings: raw.meetings||[], dailyNotes: raw.dailyNotes||{}};
+  }catch(e){ return {tasks:[], labelColors:{}, projectColors:{}, meetings:[], dailyNotes:{}}; }
+}
+
+// One-time conversion of the old "one text box per day" sidebar: every
+// non-empty line of today's old text becomes its own meeting row (title only,
+// no time). Returns true if anything changed, so the caller knows to save.
+function migrateDailyNotes(){
+  if(!dailyNotes || Object.keys(dailyNotes).length===0) return false;
+  const text = dailyNotes[todayStr()];
+  if(text && text.trim()){
+    text.split('\n').map(s=>s.trim()).filter(Boolean).forEach(line=>{
+      meetings.push({ id: uid(), date: todayStr(), time:'', title: line, passed:false, notesDone:false });
+    });
+  }
+  dailyNotes = {};
+  return true;
 }
 function persist(){
-  const payload = {tasks, labelColors, projectColors, dailyNotes};
+  const payload = {tasks, labelColors, projectColors, meetings};
   localStorage.setItem('vooruit_tasks', JSON.stringify(payload));
   if(fsDoc && !applyingRemote){
     setDoc(fsDoc, payload).catch(err=>{
@@ -173,10 +198,13 @@ function watchTasks(userUid){
       tasks = (d.tasks||[]).map(migrateTask);
       labelColors = d.labelColors || {};
       projectColors = d.projectColors || {};
+      meetings = d.meetings || [];
       dailyNotes = d.dailyNotes || {};
-      localStorage.setItem('vooruit_tasks', JSON.stringify({tasks,labelColors,projectColors,dailyNotes}));
+      const migrated = migrateDailyNotes();
+      localStorage.setItem('vooruit_tasks', JSON.stringify({tasks,labelColors,projectColors,meetings}));
       applyingRemote = false;
       cleanupOldArchive();
+      if(migrated) persist();
       render();
     },
     // Previously a failed read (wrong permissions, a stale token, etc.)
@@ -190,7 +218,9 @@ function authErr(msg){ document.getElementById('authError').textContent = msg; }
 function initApp(){
   if(!firebaseConfigured){
     const loaded = loadLocal();
-    tasks = loaded.tasks; labelColors = loaded.labelColors; projectColors = loaded.projectColors; dailyNotes = loaded.dailyNotes;
+    tasks = loaded.tasks; labelColors = loaded.labelColors; projectColors = loaded.projectColors;
+    meetings = loaded.meetings; dailyNotes = loaded.dailyNotes;
+    if(migrateDailyNotes()) persist();
     document.getElementById('setupScreen').style.display = 'flex';
     // Wired up here (instead of an inline onclick in the HTML) because
     // app.js is now a module - module-level functions aren't automatically
@@ -384,10 +414,20 @@ function plannedChip(t){
   }
   return `<span class="tag plain">${label}</span>`;
 }
+// The little colored dot in front of a due date, using the same cut-offs as
+// the chip colors: 🔴 = today, tomorrow or already overdue, 🟠 = within the
+// coming week, 🟡 = anything further away.
+function dueEmoji(due){
+  const diff = daysBetween(todayStr(), due);
+  if(diff<=1) return '🔴';
+  if(diff<=7) return '🟠';
+  return '🟡';
+}
 function dueChip(due){
   const hex = dueUrgencyHex(due);
-  if(hex) return `<span class="tag" style="background:${lighten(hex,0.82)};color:${darken(hex,0.35)}">Due ${fmtDate(due)}</span>`;
-  return `<span class="tag plain">Due ${fmtDate(due)}</span>`;
+  const emoji = dueEmoji(due);
+  if(hex) return `<span class="tag" style="background:${lighten(hex,0.82)};color:${darken(hex,0.35)}">${emoji} Due ${fmtDate(due)}</span>`;
+  return `<span class="tag plain">${emoji} Due ${fmtDate(due)}</span>`;
 }
 // Darkens a color toward black by the given amount (0-1) - used for tag
 // text, so it stays readable against the tag's pale tinted background
@@ -768,6 +808,156 @@ function renderTags(main){
   main.append(labelSection);
 }
 
+/* ================================================================
+   DUE DATES PAGE
+   Every task that has a DUE date (the planned date is ignored here),
+   grouped under its date, earliest date first - so overdue things are
+   at the very top and the far future is at the bottom.
+   ================================================================ */
+const WEEKDAY_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function renderDue(main, list){
+  if(list.length===0){
+    const e=document.createElement('div'); e.className='empty'; e.textContent='No tasks with a due date match these filters.';
+    main.append(e);
+    return;
+  }
+  // Group the tasks by their due date...
+  const groups = {};
+  list.forEach(t=>{ (groups[t.due] = groups[t.due] || []).push(t); });
+  // ...then walk the dates in chronological order (YYYY-MM-DD text sorts correctly).
+  Object.keys(groups).sort().forEach(date=>{
+    const diff = daysBetween(todayStr(), date);
+    let rel;
+    if(diff<0) rel = (-diff)+' day'+(diff===-1?'':'s')+' overdue';
+    else if(diff===0) rel = 'today';
+    else if(diff===1) rel = 'tomorrow';
+    else rel = 'in '+diff+' days';
+    // Only mention the year when it isn't the current one.
+    const yearNote = date.slice(0,4)!==todayStr().slice(0,4) ? ' '+date.slice(0,4) : '';
+
+    const group = document.createElement('div'); group.className='due-group';
+    const head = document.createElement('div'); head.className='due-heading';
+    head.innerHTML = `${dueEmoji(date)} ${WEEKDAY_SHORT[weekdayOf(date)]} ${fmtDate(date)}${yearNote} <span class="due-rel">· ${rel}</span>`;
+    group.append(head);
+
+    const cards = document.createElement('div'); cards.className='due-cards';
+    // Within one date: most urgent priority first, then alphabetical.
+    groups[date]
+      .sort((a,b)=> PRIORITY_ORDER.indexOf(a.priority)-PRIORITY_ORDER.indexOf(b.priority) || a.title.localeCompare(b.title))
+      .forEach(t=>cards.append(taskCard(t)));
+    group.append(cards);
+    main.append(group);
+  });
+}
+
+/* ================================================================
+   MEETINGS & APPOINTMENTS SIDEBAR (Today tab)
+   A small list: time + title + two checkboxes per meeting.
+     "Past"  - tick once the meeting is over (the row gets crossed out)
+     "Notes" - tick once you've written up your notes. A meeting that is
+               past but has no notes yet is highlighted, so you can see
+               at a glance which write-ups you still owe.
+   "Clear day" empties the whole list (with an Undo), for a fresh start.
+   ================================================================ */
+// Number of meetings that still need something from you (not yet past, or
+// past but notes not written). Shown on the button that opens the sidebar.
+function meetingsOpenCount(){ return meetings.filter(m=>!(m.passed && m.notesDone)).length; }
+function meetingsToggleLabel(){ const n = meetingsOpenCount(); return '📅 Meetings' + (n ? ' ('+n+')' : ''); }
+function updateMeetingsToggle(){
+  const b = document.getElementById('meetingsToggle');
+  if(b) b.textContent = meetingsToggleLabel();
+}
+
+// Redraws just the list of meeting rows (not the whole page), so whatever
+// you're in the middle of typing in the "add" row isn't lost.
+function renderMeetingList(listEl){
+  listEl = listEl || document.getElementById('meetingList');
+  if(!listEl) return;
+  listEl.innerHTML = '';
+  if(meetings.length===0){
+    const e = document.createElement('div'); e.className='empty'; e.textContent='No meetings yet.';
+    listEl.append(e);
+    return;
+  }
+  const timeKey = m => m.time || '99:99';   // meetings without a time go last
+  const sorted = [...meetings].sort((a,b)=> (a.date||'').localeCompare(b.date||'') || timeKey(a).localeCompare(timeKey(b)));
+  const refresh = ()=>{ persist(); renderMeetingList(); updateMeetingsToggle(); };
+
+  sorted.forEach(m=>{
+    const row = document.createElement('div');
+    row.className = 'mp-row' + (m.passed ? ' passed' : '') + (m.passed && !m.notesDone ? ' needs-notes' : '');
+
+    const when = document.createElement('span'); when.className='mp-when';
+    when.innerHTML = `<span>${m.time || ''}</span>` + (m.date && m.date!==todayStr() ? `<small>${fmtDate(m.date)}</small>` : '');
+
+    const name = document.createElement('span'); name.className='mp-name'; name.textContent = m.title;
+
+    const past = document.createElement('input'); past.type='checkbox'; past.checked = !!m.passed;
+    past.title = 'Tick when the meeting is over';
+    past.onchange = ()=>{ m.passed = past.checked; refresh(); };
+
+    const notes = document.createElement('input'); notes.type='checkbox'; notes.className='mp-notes'; notes.checked = !!m.notesDone;
+    notes.title = 'Tick when your notes are written down';
+    notes.onchange = ()=>{ m.notesDone = notes.checked; refresh(); };
+
+    const del = document.createElement('button'); del.className='mp-del'; del.textContent='×'; del.title='Remove this meeting';
+    del.onclick = ()=>{
+      meetings = meetings.filter(x=>x.id!==m.id);
+      refresh();
+      showToast('Removed "'+m.title+'"', { label:'Undo', onClick: ()=>{ meetings.push(m); refresh(); } });
+    };
+
+    row.append(when, name, past, notes, del);
+    listEl.append(row);
+  });
+}
+
+function buildMeetingsPanel(){
+  const panel = document.createElement('div'); panel.className='meetings-panel';
+
+  const head = document.createElement('div'); head.className='mp-head';
+  const title = document.createElement('div'); title.className='mp-title'; title.textContent='Meetings & appointments';
+  const clearBtn = document.createElement('button'); clearBtn.className='mp-clear'; clearBtn.textContent='Clear day';
+  clearBtn.title = 'Remove every meeting from this list';
+  clearBtn.onclick = ()=>{
+    if(meetings.length===0) return;
+    const removed = meetings;
+    meetings = [];
+    persist(); renderMeetingList(); updateMeetingsToggle();
+    showToast('Cleared '+removed.length+(removed.length===1?' meeting':' meetings'), {
+      label:'Undo', onClick: ()=>{ meetings = removed.concat(meetings); persist(); renderMeetingList(); updateMeetingsToggle(); }
+    });
+  };
+  head.append(title, clearBtn);
+
+  // The "add a meeting" row: time, title, and a + button (Enter works too).
+  const addRow = document.createElement('div'); addRow.className='mp-add';
+  const timeInp = document.createElement('input'); timeInp.type='time'; timeInp.id='meetingTime'; timeInp.title='Time (optional)';
+  const titleInp = document.createElement('input'); titleInp.type='text'; titleInp.id='meetingTitle'; titleInp.placeholder='Meeting title';
+  const addBtn = document.createElement('button'); addBtn.className='mp-addbtn'; addBtn.textContent='+'; addBtn.title='Add meeting';
+  const add = ()=>{
+    const text = titleInp.value.trim();
+    if(!text){ titleInp.focus(); return; }
+    meetings.push({ id: uid(), date: todayStr(), time: timeInp.value || '', title: text, passed:false, notesDone:false });
+    persist();
+    timeInp.value = ''; titleInp.value = '';
+    renderMeetingList(); updateMeetingsToggle();
+    titleInp.focus();   // ready for the next one
+  };
+  addBtn.onclick = add;
+  titleInp.addEventListener('keydown', e=>{ if(e.key==='Enter') add(); });
+  addRow.append(timeInp, titleInp, addBtn);
+
+  // Small column labels above the two checkbox columns.
+  const cols = document.createElement('div'); cols.className='mp-cols';
+  cols.innerHTML = '<span></span><span></span><span>Past</span><span>Notes</span><span></span>';
+
+  const list = document.createElement('div'); list.id='meetingList'; list.className='mp-list';
+  panel.append(head, addRow, cols, list);
+  renderMeetingList(list);
+  return panel;
+}
+
 function render(){
   document.querySelectorAll('nav button[data-view]').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
   // Keep the Quick tab's badge up to date with how many quick tasks are still unfinished.
@@ -776,38 +966,48 @@ function render(){
   badge.textContent = pendingQuick;
   badge.style.display = pendingQuick>0 ? 'flex' : 'none';
   const main = document.getElementById('main'); main.innerHTML='';
+  // While the meetings sidebar is popped out, let the page use (almost) the
+  // full screen width instead of the usual centered column - otherwise the
+  // tasks get squeezed while a lot of empty margin is left on both sides.
+  main.classList.toggle('wide', view==='today' && meetingsOpen);
   if(view==='archive'){ renderArchive(main); return; }
   if(view==='quick'){ renderQuick(main); return; }
   if(view==='tags'){ renderTags(main); return; }
 
-  // The Today tab gets a two-column layout: the board on the left, and a
-  // free-text notes box for the day's meetings/appointments on the right.
-  // Every other tab renders straight into "main" as before.
+  // On the Today tab, when the meetings sidebar is open, the page becomes two
+  // columns: the task board on the left, the sidebar on the right. When it's
+  // closed (the default), everything renders straight into "main" as usual.
   let target = main;
-  if(view==='today'){
+  if(view==='today' && meetingsOpen){
     const layout = document.createElement('div'); layout.className='today-layout';
     target = document.createElement('div'); target.className='today-main';
-    const sidebar = document.createElement('div'); sidebar.className='today-notes';
-    sidebar.innerHTML = '<label>Meetings & appointments today</label>';
-    const ta = document.createElement('textarea');
-    ta.placeholder = 'Jot down anything for today...';
-    ta.value = dailyNotes[todayStr()] || '';
-    ta.onchange = ()=>{ dailyNotes[todayStr()] = ta.value; persist(); };
-    sidebar.append(ta);
-    layout.append(target, sidebar);
+    layout.append(target, buildMeetingsPanel());
     main.append(layout);
   }
 
   const chipsWrap = document.createElement('div'); chipsWrap.className='filters';
   renderFilterChips(chipsWrap);
+  if(view==='today'){
+    // The button that pops the meetings sidebar out / tucks it away again.
+    const tb = document.createElement('button'); tb.id='meetingsToggle';
+    tb.className = 'chip meetings-toggle' + (meetingsOpen ? ' on' : '');
+    tb.textContent = meetingsToggleLabel();
+    tb.onclick = ()=>{
+      meetingsOpen = !meetingsOpen;
+      localStorage.setItem('hoekie_meetings_open', meetingsOpen ? '1' : '0');
+      render();
+    };
+    chipsWrap.append(tb);
+  }
   target.append(chipsWrap);
   renderFilterPicker(target);
 
   let list = tasks.filter(t=>!t.quick).filter(passesFilters);
   if(view==='today') list = list.filter(isTodayOrOverdue);
-  // "All tasks" (the renamed Later tab) now has no date filter at all -
+  // "All tasks" (the renamed Later tab) has no date filter at all -
   // it shows everything not excluded by the chips above, today included.
 
+  if(view==='due'){ renderDue(target, list.filter(t=>t.due)); return; }
   if(view==='all'){
     if(list.length===0){ const e=document.createElement('div'); e.className='empty'; e.textContent='No tasks match these filters.'; target.append(e); }
     else renderTable(target, list);
