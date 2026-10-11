@@ -54,12 +54,23 @@ let applyingRemote = false;
 let view = 'today';
 let skipOpenId = null;
 
-const filters = { favoritesOnly:false, showDone:false, projects:[], projectMode:'show', labels:[], labelMode:'show', simpleView:false, unplannedOnly:false };
+const filters = { favoritesOnly:false, showDone:false, hideWork:false, projects:[], projectMode:'show', labels:[], labelMode:'show', simpleView:false, unplannedOnly:false };
 let openFilterPicker = null; // 'project' | 'label' | null - which picker panel is expanded
 const PRIORITY_LABELS = { high:'ASAP', medium:'Soon', low:'Later' };
 const PRIORITY_ORDER = ['high','medium','low'];
 const PRIORITY_HEX = { high:'#D8560E', medium:'#E1903E', low:'#CBD183' };
 const TYPE_HEX = { personal:'#849E15', work:'#6777B6', someday:'#B28622' };
+// Card borders: plain by default, and coloured ONLY when the task has a due
+// date - darkest for due today / tomorrow / overdue, lighter for the coming
+// week, lightest for anything further away (the same red/orange/yellow
+// progression as the 🔴🟠🟡 dots on the due chips).
+const DUE_BORDER_HEX = { urgent:'#D8560E', soon:'#E1903E', far:'#EFCE7B' };
+function dueBorderHex(due){
+  const diff = daysBetween(todayStr(), due);
+  if(diff<=1) return DUE_BORDER_HEX.urgent;
+  if(diff<=7) return DUE_BORDER_HEX.soon;
+  return DUE_BORDER_HEX.far;
+}
 // How many days until a due date counts as "urgent" (colored ASAP) vs "soon".
 function dueUrgencyHex(due){
   const diff = daysBetween(todayStr(), due);
@@ -383,6 +394,7 @@ function passesFilters(t){
     if(filters.labelMode==='hide' && match) return false;
   }
   if(filters.favoritesOnly && !t.favorite) return false;
+  if(filters.hideWork && t.type==='work') return false;
   if(filters.unplannedOnly && t.planned) return false;
   if(t.done && !filters.showDone) return false;
   return true;
@@ -448,7 +460,9 @@ function lighten(hex, amt){
    ================================================================ */
 function taskCard(t){
   const div = document.createElement('div'); div.className='task';
-  div.style.borderColor = PRIORITY_HEX[t.priority];
+  // Border: the plain default (set in CSS) unless the task has a due date.
+  // Finished tasks keep the plain border - nothing is urgent about them anymore.
+  if(t.due && !t.done) div.style.borderColor = dueBorderHex(t.due);
   // "In progress" tasks get a pale tint of their priority color as background.
   div.style.background = t.inProgress ? lighten(PRIORITY_HEX[t.priority], 0.85) : 'var(--card)';
   // Tapping anywhere on the card opens it for editing.
@@ -528,6 +542,8 @@ function renderFilterChips(container){
   // The on/off wording stays the same either way - only the checkmark and
   // the chip's own highlight change - so it's never ambiguous which state you're in.
   container.append(mk((filters.showDone?'✓ ':'')+'Show finished tasks', filters.showDone, ()=>{filters.showDone=!filters.showDone; render();}));
+  // Hides every task of the "Work" type (and, on the board, the Work column too).
+  container.append(mk((filters.hideWork?'✓ ':'')+'Hide work tasks', filters.hideWork, ()=>{filters.hideWork=!filters.hideWork; render();}));
   const projLabel = 'Projects' + (filters.projects.length ? ` (${filters.projects.length})` : '');
   container.append(mk(projLabel, filters.projects.length>0 || openFilterPicker==='project', ()=>{ openFilterPicker = openFilterPicker==='project'?null:'project'; render(); }));
   const tagLabel = 'Tags' + (filters.labels.length ? ` (${filters.labels.length})` : '');
@@ -593,8 +609,11 @@ function renderBoard(main, list){
     const label = document.createElement('div'); label.className='priority-row-label';
     label.innerHTML = `<span class="dot" style="background:var(--pr-${pr})"></span> ${PRIORITY_LABELS[pr]}`;
     row.append(label);
-    const cols = document.createElement('div'); cols.className='type-columns';
-    TYPE_ORDER.forEach(ty=>{
+    // With work hidden, an empty Work column would just waste a third of the
+    // width - so it's left out, and the remaining two columns share the space.
+    const visibleTypes = TYPE_ORDER.filter(ty=>!(filters.hideWork && ty==='work'));
+    const cols = document.createElement('div'); cols.className='type-columns' + (visibleTypes.length===2 ? ' cols-2' : '');
+    visibleTypes.forEach(ty=>{
       const col = document.createElement('div'); col.className='type-col';
       const colLabel = document.createElement('div'); colLabel.className='type-col-label';
       colLabel.style.color = `var(--${ty})`;
@@ -630,14 +649,15 @@ function renderTable(main, list){
   const wrap = document.createElement('div'); wrap.className='tbl-wrap';
   const table = document.createElement('table'); table.className='tasktable';
   const headers = ['Fav','Title','Type','Project','Priority','Planned','End','Due','Labels','In progress','Done',''];
-  table.innerHTML = '<thead><tr>'+headers.map(h=>`<th>${h}</th>`).join('')+'</tr></thead>';
+  // The Title header gets a class so CSS can give that column the spare width.
+  table.innerHTML = '<thead><tr>'+headers.map(h=>`<th${h==='Title' ? ' class="col-title"' : ''}>${h}</th>`).join('')+'</tr></thead>';
   const tbody = document.createElement('tbody');
   const sorted = [...list].sort((a,b)=> PRIORITY_ORDER.indexOf(a.priority)-PRIORITY_ORDER.indexOf(b.priority) || TYPE_ORDER.indexOf(a.type)-TYPE_ORDER.indexOf(b.type));
   sorted.forEach(t=>{
     const tr = document.createElement('tr');
     const td = el => { const c=document.createElement('td'); c.append(el); return c; };
 
-    const titleInp = document.createElement('input'); titleInp.type='text'; titleInp.value=t.title;
+    const titleInp = document.createElement('input'); titleInp.type='text'; titleInp.value=t.title; titleInp.className='tbl-title';
     titleInp.onchange = ()=>{ t.title=titleInp.value; persist(); };
 
     // Type and Priority selects are colored to match their meaning elsewhere in the app.
@@ -970,6 +990,8 @@ function render(){
   // full screen width instead of the usual centered column - otherwise the
   // tasks get squeezed while a lot of empty margin is left on both sides.
   main.classList.toggle('wide', view==='today' && meetingsOpen);
+  // The Table tab has a lot of columns, so it gets the whole screen width.
+  main.classList.toggle('full', view==='all');
   if(view==='archive'){ renderArchive(main); return; }
   if(view==='quick'){ renderQuick(main); return; }
   if(view==='tags'){ renderTags(main); return; }

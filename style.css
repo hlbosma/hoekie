@@ -39,9 +39,12 @@ main{max-width:960px;margin:0 auto;padding:16px 16px 90px;}
 .priority-row-label{display:flex;align-items:center;gap:7px;font-weight:700;font-size:13px;margin-bottom:10px;}
 .priority-row-label .dot{width:10px;height:10px;border-radius:50%;flex:none;}
 .type-columns{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
-@media (max-width:760px){ .type-columns{grid-template-columns:1fr;} }
+/* With work tasks hidden there are only two columns (see renderBoard). */
+.type-columns.cols-2{grid-template-columns:repeat(2,1fr);}
+@media (max-width:760px){ .type-columns,.type-columns.cols-2{grid-template-columns:1fr;} }
 .type-col-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;}
 
+/* Every card has this plain border; JS colours it only when the task has a due date. */
 .task{background:var(--card);border:2px solid var(--line);border-radius:var(--radius);padding:11px 13px;margin-bottom:8px;cursor:pointer;}
 .task-top{display:flex;align-items:flex-start;gap:9px;}
 .check{width:20px;height:20px;border-radius:50%;border:2.5px solid var(--ink-soft);flex:none;margin-top:1px;cursor:pointer;background:none;color:transparent;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;}
@@ -127,6 +130,12 @@ table.tasktable th{text-align:left;padding:6px 8px;border-bottom:1px solid var(-
 table.tasktable td{padding:4px 6px;border-bottom:1px solid var(--line);}
 table.tasktable input,table.tasktable select{font:inherit;font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);min-width:80px;}
 table.tasktable input[type=checkbox]{min-width:auto;width:16px;height:16px;}
+/* The Table tab uses the full screen width (JS adds the "full" class to main). */
+main.full{max-width:none;padding-left:24px;padding-right:24px;}
+/* A roomy, easier-to-read title column. */
+table.tasktable input.tbl-title{width:100%;min-width:340px;font-size:14px;font-weight:600;padding:7px 10px;}
+/* ...and it soaks up most of the spare width on a big screen (never less than 340px). */
+table.tasktable th.col-title{width:40%;}
 
 /* ============ WIZARD STEP TIMELINE ============
    A vertical line of dots, one per wizard step, shown below the
