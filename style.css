@@ -188,7 +188,8 @@ table.tasktable th.col-title{width:40%;}
    instead of the usual narrow centered column, so tasks aren't squeezed
    while empty margin is left over on both sides. */
 main.wide{max-width:1500px;}
-.meetings-toggle{margin-left:auto;}
+/* position:relative so the red count badge (.badge) can sit on the button's corner */
+.meetings-toggle{margin-left:auto;position:relative;}
 
 .meetings-panel{width:340px;flex:none;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;position:sticky;top:90px;max-height:calc(100vh - 110px);overflow-y:auto;}
 .mp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;}

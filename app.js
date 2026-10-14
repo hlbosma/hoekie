@@ -325,7 +325,9 @@ function isUnscheduled(t){ return !t.planned; }
    "Favorites" is on - consistent, simple, and easy to reason about.
    ================================================================ */
 function completeTask(t){
+  const wasInProgress = t.inProgress;   // remembered so Undo can put it back exactly as it was
   t.done = true; t.completedAt = todayStr(); t.inProgress = false;
+  let spawned = null;                   // the next copy of a repeating task, if one gets created
   if(t.recur && t.recur.freq!=='none'){
     const newRef = nextOccurrenceRef(t.completedAt, t.recur);
     const nt = JSON.parse(JSON.stringify(t));
@@ -338,9 +340,18 @@ function completeTask(t){
       else { nt.due = stepDate(t.due, t.recur.freq, t.recur.interval); }
     }
     tasks.push(nt);
-    showToast('New task created for '+fmtDate(nt.planned));
+    spawned = nt;
   }
   persist(); render();
+  if(spawned){
+    // Undo reverses BOTH halves: the task you just finished becomes unfinished
+    // again, and the new copy that was created for it is removed.
+    showToast('New task created for '+fmtDate(spawned.planned), { label:'Undo', onClick: ()=>{
+      t.done = false; t.completedAt = null; t.inProgress = wasInProgress;
+      tasks = tasks.filter(x=>x.id!==spawned.id);
+      persist(); render();
+    }});
+  }
 }
 // Briefly shows a message at the bottom of the screen, then fades it out on
 // its own. If an action is given ({label, onClick}), an Undo-style button
@@ -882,11 +893,16 @@ function renderDue(main, list){
 // Number of meetings that still need something from you (not yet past, or
 // past but notes not written). Shown on the button that opens the sidebar.
 function meetingsOpenCount(){ return meetings.filter(m=>!(m.passed && m.notesDone)).length; }
-function meetingsToggleLabel(){ const n = meetingsOpenCount(); return '📅 Meetings' + (n ? ' ('+n+')' : ''); }
-function updateMeetingsToggle(){
-  const b = document.getElementById('meetingsToggle');
-  if(b) b.textContent = meetingsToggleLabel();
+// Fills in the little red badge on the Meetings button: the number of meetings
+// that still need something, and hidden entirely when there are none (same
+// look as the badge on the Quick tab).
+function applyMeetingsBadge(badge){
+  if(!badge) return;
+  const n = meetingsOpenCount();
+  badge.textContent = n;
+  badge.style.display = n>0 ? 'flex' : 'none';
 }
+function updateMeetingsToggle(){ applyMeetingsBadge(document.getElementById('meetingsBadge')); }
 
 // Redraws just the list of meeting rows (not the whole page), so whatever
 // you're in the middle of typing in the "add" row isn't lost.
@@ -1013,7 +1029,10 @@ function render(){
     // The button that pops the meetings sidebar out / tucks it away again.
     const tb = document.createElement('button'); tb.id='meetingsToggle';
     tb.className = 'chip meetings-toggle' + (meetingsOpen ? ' on' : '');
-    tb.textContent = meetingsToggleLabel();
+    tb.textContent = '📅 Meetings';
+    const badge = document.createElement('span'); badge.className='badge'; badge.id='meetingsBadge';
+    applyMeetingsBadge(badge);
+    tb.append(badge);
     tb.onclick = ()=>{
       meetingsOpen = !meetingsOpen;
       localStorage.setItem('hoekie_meetings_open', meetingsOpen ? '1' : '0');
@@ -1104,7 +1123,7 @@ document.getElementById('qSave').onclick = ()=>{
   });
   persist();
   quickWrap.classList.remove('open');
-  view = 'quick';
+  // Stays in the current view too - the red count on the Quick tab shows it landed.
   render();
 };
 
@@ -1315,19 +1334,14 @@ document.getElementById('saveBtn').onclick = ()=>{
     favorite: document.getElementById('f-favorite').checked
   };
 
-  let savedTask;
   if(editingId){
     const idx = tasks.findIndex(t=>t.id===editingId);
-    if(idx>-1){ tasks[idx] = {...tasks[idx], ...data}; savedTask = tasks[idx]; }
+    if(idx>-1) tasks[idx] = {...tasks[idx], ...data};
   } else {
-    savedTask = { id: uid(), done:false, completedAt:null, inProgress:false, ...data };
-    tasks.push(savedTask);
+    tasks.push({ id: uid(), done:false, completedAt:null, inProgress:false, ...data });
   }
-  if(savedTask){
-    if(isUnscheduled(savedTask)) view='later';
-    else if(isTodayOrOverdue(savedTask)) view='today';
-    else view='all';
-  }
+  // Note: saving no longer switches you to a different tab. You stay in whatever
+  // view you were looking at, even if the task no longer belongs in it.
   persist();
   sheetWrap.classList.remove('open');
   render();
