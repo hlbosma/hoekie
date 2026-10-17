@@ -38,15 +38,9 @@
 </div>
 
 <header>
-  <div class="brand">Hoekie</div>
-  <nav>
-    <button data-view="today" class="active">Today</button>
-    <button data-view="later">All tasks</button>
-    <button data-view="all">Table</button>
-    <button data-view="due">Due dates</button>
-    <button data-view="quick" style="position:relative">Quick<span class="badge" id="quickBadge" style="display:none"></span></button>
-    <button data-view="tags">Tags & Projects</button>
-    <button data-view="archive">Archive</button>
+  <!-- Top row: the app name, and the ☰ menu (email / CSV export / sign out). -->
+  <div class="header-top">
+    <div class="brand">Hoekie</div>
     <div class="nav-right" style="position:relative">
       <button class="icon-btn" id="menuBtn" title="Menu">☰</button>
       <div class="dropdown-menu" id="dropdownMenu" style="display:none">
@@ -55,6 +49,20 @@
         <button id="signOutBtn" style="display:none">Sign out</button>
       </div>
     </div>
+  </div>
+
+  <!-- The page tabs. Two groups: the pages you use most (big, bold) on the
+       left, then a divider, then the rest (smaller, quieter). -->
+  <nav class="tabs" role="tablist">
+    <button class="tab tab-primary active" data-view="today" role="tab">Today</button>
+    <button class="tab tab-primary" data-view="due" role="tab">Due dates</button>
+    <button class="tab tab-primary" data-view="quick" role="tab">Quick<span class="badge" id="quickBadge" style="display:none"></span></button>
+    <span class="tab-divider"></span>
+    <button class="tab tab-secondary" data-view="later" role="tab">All tasks</button>
+    <button class="tab tab-secondary" data-view="all" role="tab">Table</button>
+    <button class="tab tab-secondary" data-view="work" role="tab">Work by project</button>
+    <button class="tab tab-secondary" data-view="tags" role="tab">Tags & Projects</button>
+    <button class="tab tab-secondary" data-view="archive" role="tab">Archive</button>
   </nav>
 </header>
 <main id="main"></main>

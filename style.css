@@ -15,12 +15,28 @@ html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;}
 h1,h2,.brand{font-family:'Space Grotesk',sans-serif;}
 
-header{position:sticky;top:0;padding:calc(14px + env(safe-area-inset-top,0px)) 16px 12px;background:var(--paper);border-bottom:1px solid var(--line);z-index:5;}
-.brand{font-size:20px;font-weight:700;margin:0 0 10px;}
-nav{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
-nav button{font:inherit;font-weight:600;font-size:13px;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);padding:7px 12px;border-radius:var(--radius);cursor:pointer;}
-nav button.active{background:var(--ink);color:var(--paper);border-color:var(--ink);}
-.nav-right{margin-left:auto;display:flex;gap:6px;}
+header{position:sticky;top:0;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 0;background:var(--paper);z-index:5;}
+.header-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.brand{font-size:20px;font-weight:700;margin:0;}
+.nav-right{display:flex;gap:6px;}
+
+/* ============ PAGE TABS ============
+   Deliberately NOT styled like the rounded "chips" used for filters: these
+   are flat text tabs sitting on a line, with a bar under the page you're on.
+   Two tiers: the pages you use most (Today, Due dates, Quick) are bigger and
+   bolder; everything after the divider is smaller and quieter. On a narrow
+   screen the strip scrolls sideways instead of wrapping. */
+nav.tabs{display:flex;align-items:stretch;gap:2px;overflow-x:auto;scrollbar-width:none;box-shadow:inset 0 -1px 0 var(--line);}
+nav.tabs::-webkit-scrollbar{display:none;}
+.tab{font:inherit;position:relative;flex:none;white-space:nowrap;background:none;border:none;border-bottom:3px solid transparent;border-radius:0;cursor:pointer;color:var(--ink-soft);}
+.tab:hover{color:var(--ink);}
+.tab-primary{font-size:15px;font-weight:700;color:var(--ink);padding:10px 16px 9px;}
+.tab-secondary{font-size:12.5px;font-weight:500;padding:12px 10px 10px;}
+.tab.active{color:var(--ink);border-bottom-color:var(--ink);}
+.tab-secondary.active{font-weight:700;border-bottom-color:var(--ink-soft);}
+.tab-divider{flex:none;align-self:center;width:1px;height:22px;background:var(--line);margin:0 10px;}
+/* the red count on the Quick tab sits just inside the tab's top-right corner */
+.tab .badge{top:3px;right:0;}
 .icon-btn{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);padding:7px 10px;border-radius:var(--radius);cursor:pointer;}
 /* The hamburger's dropdown: email, CSV export, sign out - replaces three
    separate header buttons with one menu, so the email isn't on display. */
@@ -191,7 +207,7 @@ main.wide{max-width:1500px;}
 /* position:relative so the red count badge (.badge) can sit on the button's corner */
 .meetings-toggle{margin-left:auto;position:relative;}
 
-.meetings-panel{width:340px;flex:none;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;position:sticky;top:90px;max-height:calc(100vh - 110px);overflow-y:auto;}
+.meetings-panel{width:340px;flex:none;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;position:sticky;top:112px;max-height:calc(100vh - 132px);overflow-y:auto;}
 .mp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;}
 .mp-title{font-weight:700;font-size:13px;}
 .mp-clear{font:inherit;font-size:11px;font-weight:600;background:none;border:1px solid var(--line);color:var(--ink-soft);padding:3px 10px;border-radius:var(--radius);cursor:pointer;}
@@ -227,4 +243,7 @@ main.wide{max-width:1500px;}
 .due-rel{font-family:'Inter',sans-serif;font-weight:500;font-size:12px;color:var(--ink-soft);}
 .due-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;align-items:start;}
 .due-cards .task{margin-bottom:0;}
+/* Work by project page: the project name as a coloured chip in each heading. */
+.proj-chip{display:inline-block;font-family:'Inter',sans-serif;font-size:13px;font-weight:700;padding:3px 12px;border-radius:var(--radius);}
+.proj-chip.none{background:var(--card);border:1px solid var(--line);color:var(--ink-soft);}
 

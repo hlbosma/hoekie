@@ -324,8 +324,23 @@ function isUnscheduled(t){ return !t.planned; }
    done" is off, same as unstarring a task hides it immediately when
    "Favorites" is on - consistent, simple, and easy to reason about.
    ================================================================ */
+/* ---- Undo helpers -----------------------------------------------------
+   Before an action changes a task, we keep a plain copy of how it looked
+   ("snapshot"). Undo simply puts that copy back in place of the task. */
+function snapshotTask(t){ return JSON.parse(JSON.stringify(t)); }
+function restoreTask(snap){
+  const i = tasks.findIndex(x=>x.id===snap.id);
+  if(i>-1) tasks[i] = snap; else tasks.push(snap);
+  persist(); render();
+}
+// Long titles are shortened inside toast messages so the toast stays small.
+function shortTitle(title, max=28){
+  title = String(title||'');
+  return title.length>max ? title.slice(0, max-1).trimEnd()+'…' : title;
+}
+
 function completeTask(t){
-  const wasInProgress = t.inProgress;   // remembered so Undo can put it back exactly as it was
+  const before = snapshotTask(t);       // how the task looked before, for Undo
   t.done = true; t.completedAt = todayStr(); t.inProgress = false;
   let spawned = null;                   // the next copy of a repeating task, if one gets created
   if(t.recur && t.recur.freq!=='none'){
@@ -343,15 +358,15 @@ function completeTask(t){
     spawned = nt;
   }
   persist(); render();
-  if(spawned){
-    // Undo reverses BOTH halves: the task you just finished becomes unfinished
-    // again, and the new copy that was created for it is removed.
-    showToast('New task created for '+fmtDate(spawned.planned), { label:'Undo', onClick: ()=>{
-      t.done = false; t.completedAt = null; t.inProgress = wasInProgress;
-      tasks = tasks.filter(x=>x.id!==spawned.id);
-      persist(); render();
-    }});
-  }
+  // Undo reverses everything: the task becomes unfinished again (exactly as it
+  // was, e.g. still "in progress"), and a repeating task's new copy is removed.
+  showToast(spawned ? 'New task created for '+fmtDate(spawned.planned) : 'Done: "'+shortTitle(t.title)+'"', {
+    label:'Undo',
+    onClick: ()=>{
+      if(spawned) tasks = tasks.filter(x=>x.id!==spawned.id);
+      restoreTask(before);
+    }
+  });
 }
 // Briefly shows a message at the bottom of the screen, then fades it out on
 // its own. If an action is given ({label, onClick}), an Undo-style button
@@ -378,13 +393,15 @@ function showToast(message, action){
 function deleteTaskWithUndo(t){
   tasks = tasks.filter(x=>x.id!==t.id);
   persist(); render();
-  showToast('Deleted "'+t.title+'"', { label:'Undo', onClick: ()=>{ tasks.push(t); persist(); render(); } });
+  showToast('Deleted "'+shortTitle(t.title)+'"', { label:'Undo', onClick: ()=>{ tasks.push(t); persist(); render(); } });
 }
 function skipTask(t, newDate){
+  const before = snapshotTask(t);
   const span = t.endDate ? daysBetween(t.planned, t.endDate) : 0;
   t.planned = newDate;
   t.endDate = span>0 ? addDays(newDate, span) : null;
   persist(); render();
+  showToast((before.planned ? 'Moved to ' : 'Planned for ')+fmtDate(newDate), { label:'Undo', onClick: ()=>restoreTask(before) });
 }
 function projectList(){ return [...new Set(tasks.filter(t=>t.type==='work' && t.project).map(t=>t.project))]; }
 function labelList(){ const s=new Set(); tasks.forEach(t=>(t.labels||[]).forEach(l=>s.add(l))); return [...s]; }
@@ -644,9 +661,11 @@ function renderBoard(main, list){
         const id = e.dataTransfer.getData('text/plain');
         const t = tasks.find(x=>x.id===id);
         if(t && (t.priority!==pr || t.type!==ty)){
+          const before = snapshotTask(t);
           t.priority = pr; t.type = ty;
           if(ty!=='work') t.project = null;
           persist(); render();
+          showToast('Moved "'+shortTitle(t.title)+'" to '+TYPE_LABELS[ty]+' · '+PRIORITY_LABELS[pr], { label:'Undo', onClick: ()=>restoreTask(before) });
         }
       });
       cols.append(col);
@@ -882,6 +901,77 @@ function renderDue(main, list){
 }
 
 /* ================================================================
+   WORK BY PROJECT PAGE
+   Every WORK task, grouped under its project, plus a last group for work
+   tasks that don't belong to a project. Inside each group the tasks are
+   sorted by due date (soonest first; tasks without a due date go last).
+   The groups themselves are ordered by their most urgent task, so the
+   project with the nearest deadline is at the top.
+   ================================================================ */
+function renderWorkProjects(main, list){
+  if(filters.hideWork){
+    const e=document.createElement('div'); e.className='empty';
+    e.textContent='Work tasks are hidden right now - switch off "Hide work tasks" to see them here.';
+    main.append(e);
+    return;
+  }
+  if(list.length===0){
+    const e=document.createElement('div'); e.className='empty'; e.textContent='No work tasks match these filters.';
+    main.append(e);
+    return;
+  }
+  // Group by project name ('' = no project).
+  const groups = {};
+  list.forEach(t=>{ (groups[t.project || ''] = groups[t.project || ''] || []).push(t); });
+
+  // Tasks inside a group: due date first (undated last), then priority, then title.
+  const prio = t => PRIORITY_ORDER.indexOf(t.priority);
+  const byDueDate = (a,b)=>{
+    if(a.due && b.due) return a.due.localeCompare(b.due) || prio(a)-prio(b) || a.title.localeCompare(b.title);
+    if(a.due) return -1;
+    if(b.due) return 1;
+    return prio(a)-prio(b) || a.title.localeCompare(b.title);
+  };
+  const firstDue = name => { const d = groups[name].filter(t=>t.due).map(t=>t.due).sort()[0]; return d || null; };
+
+  // Order the groups: nearest deadline first; projects with no deadlines after
+  // those (alphabetical); "No project" always last.
+  const names = Object.keys(groups).filter(n=>n!=='');
+  names.sort((a,b)=>{
+    const da = firstDue(a), db = firstDue(b);
+    if(da && db) return da.localeCompare(db) || a.localeCompare(b);
+    if(da) return -1;
+    if(db) return 1;
+    return a.localeCompare(b);
+  });
+  if(groups['']) names.push('');
+
+  names.forEach(name=>{
+    const items = groups[name].sort(byDueDate);
+    const group = document.createElement('div'); group.className='due-group';
+
+    const head = document.createElement('div'); head.className='due-heading';
+    const chip = document.createElement('span'); chip.className = 'proj-chip' + (name ? '' : ' none');
+    chip.textContent = name || 'No project';
+    if(name){
+      const c = projectColors[name] || DEFAULT_PROJECT_COLOR;
+      chip.style.background = lighten(c, 0.82); chip.style.color = darken(c, 0.35);
+    }
+    const first = firstDue(name);
+    const info = document.createElement('span'); info.className='due-rel';
+    info.textContent = ' · '+items.length+(items.length===1?' task':' tasks') +
+      (first ? ' · first due '+dueEmoji(first)+' '+WEEKDAY_SHORT[weekdayOf(first)]+' '+fmtDate(first) : '');
+    head.append(chip, info);
+    group.append(head);
+
+    const cards = document.createElement('div'); cards.className='due-cards';
+    items.forEach(t=>cards.append(taskCard(t)));
+    group.append(cards);
+    main.append(group);
+  });
+}
+
+/* ================================================================
    MEETINGS & APPOINTMENTS SIDEBAR (Today tab)
    A small list: time + title + two checkboxes per meeting.
      "Past"  - tick once the meeting is over (the row gets crossed out)
@@ -940,7 +1030,7 @@ function renderMeetingList(listEl){
     del.onclick = ()=>{
       meetings = meetings.filter(x=>x.id!==m.id);
       refresh();
-      showToast('Removed "'+m.title+'"', { label:'Undo', onClick: ()=>{ meetings.push(m); refresh(); } });
+      showToast('Removed "'+shortTitle(m.title)+'"', { label:'Undo', onClick: ()=>{ meetings.push(m); refresh(); } });
     };
 
     row.append(when, name, past, notes, del);
@@ -995,7 +1085,11 @@ function buildMeetingsPanel(){
 }
 
 function render(){
-  document.querySelectorAll('nav button[data-view]').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
+  document.querySelectorAll('nav button[data-view]').forEach(b=>{
+    const on = b.dataset.view===view;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
   // Keep the Quick tab's badge up to date with how many quick tasks are still unfinished.
   const pendingQuick = tasks.filter(t=>t.quick && !t.done).length;
   const badge = document.getElementById('quickBadge');
@@ -1049,6 +1143,7 @@ function render(){
   // it shows everything not excluded by the chips above, today included.
 
   if(view==='due'){ renderDue(target, list.filter(t=>t.due)); return; }
+  if(view==='work'){ renderWorkProjects(target, list.filter(t=>t.type==='work')); return; }
   if(view==='all'){
     if(list.length===0){ const e=document.createElement('div'); e.className='empty'; e.textContent='No tasks match these filters.'; target.append(e); }
     else renderTable(target, list);
@@ -1334,17 +1429,28 @@ document.getElementById('saveBtn').onclick = ()=>{
     favorite: document.getElementById('f-favorite').checked
   };
 
+  // What "Undo" will do for this save: put the old version back (when editing),
+  // or remove the task again (when it was brand new).
+  let undo = null;
   if(editingId){
     const idx = tasks.findIndex(t=>t.id===editingId);
-    if(idx>-1) tasks[idx] = {...tasks[idx], ...data};
+    if(idx>-1){
+      const before = snapshotTask(tasks[idx]);
+      tasks[idx] = {...tasks[idx], ...data};
+      undo = ()=>restoreTask(before);
+    }
   } else {
-    tasks.push({ id: uid(), done:false, completedAt:null, inProgress:false, ...data });
+    const created = { id: uid(), done:false, completedAt:null, inProgress:false, ...data };
+    tasks.push(created);
+    undo = ()=>{ tasks = tasks.filter(x=>x.id!==created.id); persist(); render(); };
   }
-  // Note: saving no longer switches you to a different tab. You stay in whatever
-  // view you were looking at, even if the task no longer belongs in it.
+  // Note: saving doesn't switch you to a different tab. You stay in whatever
+  // view you were looking at, even if the task no longer belongs in it - which
+  // is why there's a "Saved" message: it confirms the save went through.
   persist();
   sheetWrap.classList.remove('open');
   render();
+  if(undo) showToast('Saved "'+shortTitle(data.title)+'"', { label:'Undo', onClick: undo });
 };
 
 /* ================================================================
