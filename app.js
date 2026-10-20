@@ -54,8 +54,27 @@ let applyingRemote = false;
 let view = 'today';
 let skipOpenId = null;
 
-const filters = { favoritesOnly:false, showDone:false, hideWork:false, projects:[], projectMode:'show', labels:[], labelMode:'show', simpleView:false, unplannedOnly:false };
-let openFilterPicker = null; // 'project' | 'label' | null - which picker panel is expanded
+/* ================================================================
+   FILTERS ARE PER PAGE
+   Every page that shows the filter chips (Today, All tasks, Table, Due
+   dates, Work by project) keeps its OWN set of filters. Choosing
+   "Favorites" or hiding work tasks on one page changes nothing on the
+   others. "filters" always points at the set belonging to the page
+   currently on screen - render() switches it (see useFiltersFor).
+   openPicker remembers which picker (Projects / Tags) is expanded, also
+   per page.
+   ================================================================ */
+function newFilters(){
+  return { favoritesOnly:false, showDone:false, hideWork:false, projects:[], projectMode:'show',
+           labels:[], labelMode:'show', simpleView:false, unplannedOnly:false,
+           openPicker:null /* 'project' | 'label' | null */ };
+}
+const filtersByView = {};   // { today: {...}, later: {...}, all: {...}, due: {...}, work: {...} }
+let filters = newFilters();
+function useFiltersFor(v){
+  if(!filtersByView[v]) filtersByView[v] = newFilters();
+  filters = filtersByView[v];
+}
 const PRIORITY_LABELS = { high:'ASAP', medium:'Soon', low:'Later' };
 const PRIORITY_ORDER = ['high','medium','low'];
 const PRIORITY_HEX = { high:'#D8560E', medium:'#E1903E', low:'#CBD183' };
@@ -573,9 +592,9 @@ function renderFilterChips(container){
   // Hides every task of the "Work" type (and, on the board, the Work column too).
   container.append(mk((filters.hideWork?'✓ ':'')+'Hide work tasks', filters.hideWork, ()=>{filters.hideWork=!filters.hideWork; render();}));
   const projLabel = 'Projects' + (filters.projects.length ? ` (${filters.projects.length})` : '');
-  container.append(mk(projLabel, filters.projects.length>0 || openFilterPicker==='project', ()=>{ openFilterPicker = openFilterPicker==='project'?null:'project'; render(); }));
+  container.append(mk(projLabel, filters.projects.length>0 || filters.openPicker==='project', ()=>{ filters.openPicker = filters.openPicker==='project'?null:'project'; render(); }));
   const tagLabel = 'Tags' + (filters.labels.length ? ` (${filters.labels.length})` : '');
-  container.append(mk(tagLabel, filters.labels.length>0 || openFilterPicker==='label', ()=>{ openFilterPicker = openFilterPicker==='label'?null:'label'; render(); }));
+  container.append(mk(tagLabel, filters.labels.length>0 || filters.openPicker==='label', ()=>{ filters.openPicker = filters.openPicker==='label'?null:'label'; render(); }));
   container.append(mk('No planned date', filters.unplannedOnly, ()=>{ filters.unplannedOnly=!filters.unplannedOnly; render(); }));
   container.append(mk('Simple view', filters.simpleView, ()=>{ filters.simpleView=!filters.simpleView; render(); }));
 }
@@ -584,8 +603,8 @@ function renderFilterChips(container){
 // any number of projects or tags, and choose whether that list means
 // "only show tasks with these" or "hide tasks with these".
 function renderFilterPicker(main){
-  if(!openFilterPicker) return;
-  const isProj = openFilterPicker==='project';
+  if(!filters.openPicker) return;
+  const isProj = filters.openPicker==='project';
   const items = isProj ? projectList() : labelList();
   const selected = isProj ? filters.projects : filters.labels;
   const modeKey = isProj ? 'projectMode' : 'labelMode';
@@ -1085,6 +1104,7 @@ function buildMeetingsPanel(){
 }
 
 function render(){
+  useFiltersFor(view);   // from here on, "filters" means THIS page's filters
   document.querySelectorAll('nav button[data-view]').forEach(b=>{
     const on = b.dataset.view===view;
     b.classList.toggle('active', on);
