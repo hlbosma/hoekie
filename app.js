@@ -43,6 +43,12 @@ let meetings = [];
 let dailyNotes = {};
 // Whether the sidebar is currently popped out. Remembered on this device only.
 let meetingsOpen = localStorage.getItem('hoekie_meetings_open') === '1';
+// How the Due dates page is laid out: 'list' = a heading per date with the
+// cards underneath, or 'priority' = a grid with one ROW per due date and one
+// COLUMN per priority. Remembered on this device only.
+let dueLayout = localStorage.getItem('hoekie_due_layout') === 'priority' ? 'priority' : 'list';
+// id of the card currently being dragged (so drop targets can check it mid-drag).
+let draggingId = null;
 let editingId = null;
 let editMode = 'wizard';
 let selectedLabels = new Set();
@@ -515,7 +521,12 @@ function taskCard(t){
   // Tapping anywhere on the card opens it for editing.
   div.onclick = ()=>openSheet(t);
   div.draggable = true;
-  div.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain', t.id); });
+  div.addEventListener('dragstart', e=>{
+    e.dataTransfer.setData('text/plain', t.id);
+    draggingId = t.id;
+    highlightDropRow(t);
+  });
+  div.addEventListener('dragend', ()=>{ draggingId = null; clearDropRows(); });
 
   const top = document.createElement('div'); top.className='task-top';
   const check = document.createElement('button');
@@ -673,10 +684,7 @@ function renderBoard(main, list){
       // and type (this column) in one move. Mouse-only - most touchscreens
       // don't support this kind of drag-and-drop, so on a phone, editing the
       // task directly is still the way to change these.
-      col.addEventListener('dragover', e=>{ e.preventDefault(); col.classList.add('drop-target'); });
-      col.addEventListener('dragleave', ()=>{ col.classList.remove('drop-target'); });
-      col.addEventListener('drop', e=>{
-        e.preventDefault(); col.classList.remove('drop-target');
+      makeDropZone(col, ()=>true, e=>{
         const id = e.dataTransfer.getData('text/plain');
         const t = tasks.find(x=>x.id===id);
         if(t && (t.priority!==pr || t.type!==ty)){
@@ -884,6 +892,19 @@ function renderTags(main){
    at the very top and the far future is at the bottom.
    ================================================================ */
 const WEEKDAY_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+// The pieces of a date heading: "🔴 Wed 07/10" and "1 day overdue".
+function dueHeadingParts(date){
+  const diff = daysBetween(todayStr(), date);
+  let rel;
+  if(diff<0) rel = (-diff)+' day'+(diff===-1?'':'s')+' overdue';
+  else if(diff===0) rel = 'today';
+  else if(diff===1) rel = 'tomorrow';
+  else rel = 'in '+diff+' days';
+  // Only mention the year when it isn't the current one.
+  const yearNote = date.slice(0,4)!==todayStr().slice(0,4) ? ' '+date.slice(0,4) : '';
+  return { title: `${dueEmoji(date)} ${WEEKDAY_SHORT[weekdayOf(date)]} ${fmtDate(date)}${yearNote}`, rel };
+}
+
 function renderDue(main, list){
   if(list.length===0){
     const e=document.createElement('div'); e.className='empty'; e.textContent='No tasks with a due date match these filters.';
@@ -894,19 +915,15 @@ function renderDue(main, list){
   const groups = {};
   list.forEach(t=>{ (groups[t.due] = groups[t.due] || []).push(t); });
   // ...then walk the dates in chronological order (YYYY-MM-DD text sorts correctly).
-  Object.keys(groups).sort().forEach(date=>{
-    const diff = daysBetween(todayStr(), date);
-    let rel;
-    if(diff<0) rel = (-diff)+' day'+(diff===-1?'':'s')+' overdue';
-    else if(diff===0) rel = 'today';
-    else if(diff===1) rel = 'tomorrow';
-    else rel = 'in '+diff+' days';
-    // Only mention the year when it isn't the current one.
-    const yearNote = date.slice(0,4)!==todayStr().slice(0,4) ? ' '+date.slice(0,4) : '';
+  const dates = Object.keys(groups).sort();
 
+  if(dueLayout==='priority'){ renderDueMatrix(main, groups, dates); return; }
+
+  dates.forEach(date=>{
+    const { title, rel } = dueHeadingParts(date);
     const group = document.createElement('div'); group.className='due-group';
     const head = document.createElement('div'); head.className='due-heading';
-    head.innerHTML = `${dueEmoji(date)} ${WEEKDAY_SHORT[weekdayOf(date)]} ${fmtDate(date)}${yearNote} <span class="due-rel">· ${rel}</span>`;
+    head.innerHTML = `${title} <span class="due-rel">· ${rel}</span>`;
     group.append(head);
 
     const cards = document.createElement('div'); cards.className='due-cards';
@@ -917,6 +934,107 @@ function renderDue(main, list){
     group.append(cards);
     main.append(group);
   });
+}
+
+/* ---- "By priority" layout of the Due dates page ----------------------
+   A grid: one ROW per due date (earliest at the top), one COLUMN per
+   priority (ASAP, Soon, Later). Every task sits in the cell where its
+   due date and priority meet. Drag a card sideways to another column
+   in its own row to change its priority. Cards can only be dropped in
+   their OWN date's row - on purpose, so a slip of the mouse can't change
+   a deadline (to change a due date, edit the task). */
+function renderDueMatrix(main, groups, dates){
+  const matrix = document.createElement('div'); matrix.className='due-matrix';
+
+  // Column labels (they stay visible under the page header while you scroll).
+  const corner = document.createElement('div'); corner.className='due-corner';
+  matrix.append(corner);
+  PRIORITY_ORDER.forEach(pr=>{
+    const head = document.createElement('div'); head.className='due-col-head';
+    head.innerHTML = `<span class="dot" style="background:var(--pr-${pr})"></span> ${PRIORITY_LABELS[pr]}`;
+    matrix.append(head);
+  });
+
+  dates.forEach(date=>{
+    const { title, rel } = dueHeadingParts(date);
+    const dateCell = document.createElement('div'); dateCell.className='due-date-cell';
+    dateCell.innerHTML = `<div class="due-date-title">${title}</div><div class="due-rel">${rel}</div>`;
+    matrix.append(dateCell);
+
+    PRIORITY_ORDER.forEach(pr=>{
+      const cell = document.createElement('div'); cell.className='due-cell';
+      cell.dataset.date = date; cell.dataset.pr = pr; cell.dataset.label = PRIORITY_LABELS[pr];
+      const items = groups[date]
+        .filter(t=>t.priority===pr)
+        .sort((a,b)=> TYPE_ORDER.indexOf(a.type)-TYPE_ORDER.indexOf(b.type) || a.title.localeCompare(b.title));
+      if(items.length===0){
+        cell.classList.add('is-empty');
+        const e = document.createElement('div'); e.className='empty'; e.textContent='—';
+        cell.append(e);
+      } else {
+        items.forEach(t=>cell.append(taskCard(t)));
+      }
+
+      // Drop target: only accepts a card from the SAME date row.
+      const draggedTask = ()=>tasks.find(x=>x.id===draggingId);
+      makeDropZone(cell, ()=>{ const t = draggedTask(); return !!t && t.due===date; }, e=>{
+        const t = tasks.find(x=>x.id === (e.dataTransfer.getData('text/plain') || draggingId));
+        draggingId = null;
+        if(t && t.due===date && t.priority!==pr){
+          const before = snapshotTask(t);
+          t.priority = pr;
+          persist(); render();
+          showToast('Moved "'+shortTitle(t.title)+'" to '+PRIORITY_LABELS[pr], { label:'Undo', onClick: ()=>restoreTask(before) });
+        }
+      });
+      matrix.append(cell);
+    });
+  });
+  main.append(matrix);
+}
+
+// Turns an element into a place cards can be dropped.
+//   isValid() - may the card being dragged land here right now?
+//   onDrop(e) - what to do when it does.
+// The "depth" counter exists because the browser fires a "leave" event every
+// time the pointer moves from the zone onto a card INSIDE it; without counting
+// those, the highlight would blink off whenever you drag across a card.
+function makeDropZone(el, isValid, onDrop){
+  let depth = 0;
+  el.addEventListener('dragenter', e=>{ if(isValid()){ e.preventDefault(); depth++; } });
+  el.addEventListener('dragover',  e=>{ if(isValid()){ e.preventDefault(); el.classList.add('drop-target'); } });
+  el.addEventListener('dragleave', ()=>{ depth = Math.max(0, depth-1); if(depth===0) el.classList.remove('drop-target'); });
+  el.addEventListener('drop',      e=>{ e.preventDefault(); depth = 0; el.classList.remove('drop-target'); onDrop(e); });
+}
+
+// While a card is being dragged on the "By priority" layout, outline the cells
+// it is allowed to land in (its own date's row); clear the outlines afterwards.
+function highlightDropRow(t){
+  if(!t.due) return;
+  document.querySelectorAll('.due-cell[data-date="'+t.due+'"]').forEach(c=>c.classList.add('can-drop'));
+}
+function clearDropRows(){
+  document.querySelectorAll('.due-cell.can-drop, .due-cell.drop-target').forEach(c=>c.classList.remove('can-drop','drop-target'));
+}
+
+// The small "By date | By priority" switch shown on the Due dates page.
+function buildDueLayoutToggle(){
+  const wrap = document.createElement('div'); wrap.className='layout-toggle'; wrap.setAttribute('role','group');
+  wrap.title = 'How to arrange the tasks on this page';
+  [['list','By date'],['priority','By priority']].forEach(([value,label])=>{
+    const b = document.createElement('button'); b.type='button'; b.textContent = label;
+    b.className = dueLayout===value ? 'on' : '';
+    b.onclick = ()=>{ dueLayout = value; localStorage.setItem('hoekie_due_layout', value); render(); };
+    wrap.append(b);
+  });
+  return wrap;
+}
+
+// Remembers how tall the sticky page header is, so things that stick just
+// BELOW it (the column labels of the "By priority" layout) know where to stop.
+function syncHeaderHeight(){
+  const h = document.querySelector('header');
+  if(h) document.documentElement.style.setProperty('--header-h', h.offsetHeight+'px');
 }
 
 /* ================================================================
@@ -1122,6 +1240,9 @@ function render(){
   main.classList.toggle('wide', view==='today' && meetingsOpen);
   // The Table tab has a lot of columns, so it gets the whole screen width.
   main.classList.toggle('full', view==='all');
+  // The "By priority" grid on the Due dates page wants some extra room.
+  main.classList.toggle('roomy', view==='due' && dueLayout==='priority');
+  syncHeaderHeight();
   if(view==='archive'){ renderArchive(main); return; }
   if(view==='quick'){ renderQuick(main); return; }
   if(view==='tags'){ renderTags(main); return; }
@@ -1154,6 +1275,7 @@ function render(){
     };
     chipsWrap.append(tb);
   }
+  if(view==='due') chipsWrap.append(buildDueLayoutToggle());
   target.append(chipsWrap);
   renderFilterPicker(target);
 
@@ -1490,6 +1612,7 @@ window.addEventListener('error', (e)=>{
 // Promises that fail without a .catch() attached (common inside Firebase's
 // own internals, since it's Promise-heavy) don't trigger the 'error' event
 // above at all - they need their own separate listener.
+window.addEventListener('resize', syncHeaderHeight);
 window.addEventListener('unhandledrejection', (e)=>{
   const reason = e.reason;
   console.error('Unhandled promise rejection:', reason);

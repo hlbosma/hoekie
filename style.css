@@ -247,3 +247,37 @@ main.wide{max-width:1500px;}
 .proj-chip{display:inline-block;font-family:'Inter',sans-serif;font-size:13px;font-weight:700;padding:3px 12px;border-radius:var(--radius);}
 .proj-chip.none{background:var(--card);border:1px solid var(--line);color:var(--ink-soft);}
 
+
+/* ============ Due dates page: "By priority" layout ============
+   A grid with one ROW per due date and one COLUMN per priority. Cards can be
+   dragged sideways between the columns of their own date's row. */
+main.roomy{max-width:1200px;}
+/* the little "By date | By priority" switch (a joined pair, not a filter chip) */
+.layout-toggle{margin-left:auto;display:inline-flex;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--card);}
+.layout-toggle button{font:inherit;font-size:12px;font-weight:600;padding:5px 12px;border:none;background:none;color:var(--ink-soft);cursor:pointer;}
+.layout-toggle button.on{background:var(--ink);color:var(--paper);}
+
+.due-matrix{display:grid;grid-template-columns:130px repeat(3,minmax(0,1fr));align-items:start;}
+/* Column labels stay in view just under the page header while scrolling
+   (--header-h is measured by JS: syncHeaderHeight). */
+.due-corner,.due-col-head{position:sticky;top:var(--header-h,104px);z-index:3;background:var(--paper);border-bottom:1px solid var(--line);padding:8px 6px;}
+.due-col-head{display:flex;align-items:center;gap:7px;font-weight:700;font-size:13px;}
+.due-col-head .dot{width:10px;height:10px;border-radius:50%;flex:none;}
+.due-date-cell,.due-cell{padding:12px 6px 4px;border-top:1px solid var(--line);}
+.due-matrix > :nth-child(n+5):nth-child(-n+8){border-top:none;}   /* first row: the header already draws the line */
+.due-date-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;line-height:1.25;}
+.due-cell{min-height:64px;}
+.due-cell .task{margin-bottom:8px;}
+/* while dragging: faint outline on the cells the card may land in, strong one on the hovered cell */
+.due-cell.can-drop{outline:1px dashed var(--ink-soft);outline-offset:-3px;}
+.due-cell.drop-target{background:rgba(34,48,58,.07);outline:2px dashed var(--ink);outline-offset:-3px;}
+@media (max-width:760px){
+  /* Phone: no grid. Each date becomes a heading followed by its priority groups. */
+  .due-matrix{display:block;}
+  .due-corner,.due-col-head{display:none;}
+  .due-date-cell{margin-top:14px;padding:12px 0 2px;}
+  .due-cell{border-top:none;padding:0;min-height:0;}
+  .due-cell::before{content:attr(data-label);display:block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-soft);margin:8px 0 4px;}
+  .due-cell.is-empty{display:none;}
+  .layout-toggle{margin-left:0;}
+}
