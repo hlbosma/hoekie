@@ -47,6 +47,10 @@ let meetingsOpen = localStorage.getItem('hoekie_meetings_open') === '1';
 // cards underneath, or 'priority' = a grid with one ROW per due date and one
 // COLUMN per priority. Remembered on this device only.
 let dueLayout = localStorage.getItem('hoekie_due_layout') === 'priority' ? 'priority' : 'list';
+// How the Work by project page is laid out: 'due' = the project groups with
+// cards sorted by due date, or 'planned' = a grid with one ROW per project and
+// one COLUMN per planned date. Remembered on this device only.
+let workLayout = localStorage.getItem('hoekie_work_layout') === 'planned' ? 'planned' : 'due';
 // id of the card currently being dragged (so drop targets can check it mid-drag).
 let draggingId = null;
 let editingId = null;
@@ -196,8 +200,11 @@ function persist(){
     });
   }
 }
+// Finished tasks stay in the Archive for ARCHIVE_DAYS days after you finished
+// them, then they're removed for good. Runs whenever the app loads or syncs.
+const ARCHIVE_DAYS = 7;
 function cleanupOldArchive(){
-  const cutoff = addDays(todayStr(), -30);
+  const cutoff = addDays(todayStr(), -ARCHIVE_DAYS);
   const before = tasks.length;
   tasks = tasks.filter(t => !(t.done && t.completedAt && t.completedAt < cutoff));
   if(tasks.length !== before) persist();
@@ -773,7 +780,16 @@ function renderTable(main, list){
     const delBtn = document.createElement('button'); delBtn.className='del-btn'; delBtn.textContent='Delete';
     delBtn.onclick = ()=>deleteTaskWithUndo(t);
 
-    [favChk,titleInp,typeSel,projSel,prSel,plannedInp,endInp,dueInp,labelsInp,progChk,doneChk,delBtn].forEach(el=>tr.append(td(el)));
+    // A pencil next to the title opens this task in the edit panel (the same
+    // one the cards use). It's a separate button because the title itself is
+    // an input you can type in directly.
+    const openBtn = document.createElement('button'); openBtn.type='button'; openBtn.className='icon-action';
+    openBtn.textContent = '✏️'; openBtn.title = 'Open this task in the edit panel';
+    openBtn.onclick = ()=>openSheet(t);
+    const titleCell = document.createElement('div'); titleCell.className='title-cell';
+    titleCell.append(titleInp, openBtn);
+
+    [favChk,titleCell,typeSel,projSel,prSel,plannedInp,endInp,dueInp,labelsInp,progChk,doneChk,delBtn].forEach(el=>tr.append(td(el)));
     tbody.append(tr);
   });
   table.append(tbody);
@@ -804,7 +820,7 @@ function renderArchive(main){
   };
   main.append(delAll);
   const note = document.createElement('div'); note.className='hint'; note.style.marginBottom='10px';
-  note.textContent = 'Finished tasks are removed automatically 30 days after completion.';
+  note.textContent = 'Finished tasks are removed automatically '+ARCHIVE_DAYS+' days after completion.';
   main.append(note);
   done.forEach(t=>{
     const row = document.createElement('div'); row.className='archive-row';
@@ -1010,24 +1026,37 @@ function makeDropZone(el, isValid, onDrop){
 // While a card is being dragged on the "By priority" layout, outline the cells
 // it is allowed to land in (its own date's row); clear the outlines afterwards.
 function highlightDropRow(t){
-  if(!t.due) return;
-  document.querySelectorAll('.due-cell[data-date="'+t.due+'"]').forEach(c=>c.classList.add('can-drop'));
+  // Due dates grid: the cells of the card's own due-date row.
+  if(t.due) document.querySelectorAll('.due-cell[data-date="'+t.due+'"]').forEach(c=>c.classList.add('can-drop'));
+  // Work-by-planned-date grid: the cells of the card's own project row.
+  if(t.type==='work') document.querySelectorAll('.plan-cell').forEach(c=>{ if(c.dataset.project === (t.project||'')) c.classList.add('can-drop'); });
 }
 function clearDropRows(){
-  document.querySelectorAll('.due-cell.can-drop, .due-cell.drop-target').forEach(c=>c.classList.remove('can-drop','drop-target'));
+  document.querySelectorAll('.due-cell.can-drop, .due-cell.drop-target, .plan-cell.can-drop, .plan-cell.drop-target')
+    .forEach(c=>c.classList.remove('can-drop','drop-target'));
 }
 
-// The small "By date | By priority" switch shown on the Due dates page.
-function buildDueLayoutToggle(){
+// A small joined two-button switch for choosing how a page is arranged, e.g.
+// "By date | By priority". `options` is [[value,label],...]; `current` is the
+// value that's active; `onPick(value)` is called when the other one is clicked.
+function buildLayoutToggle(options, current, onPick){
   const wrap = document.createElement('div'); wrap.className='layout-toggle'; wrap.setAttribute('role','group');
   wrap.title = 'How to arrange the tasks on this page';
-  [['list','By date'],['priority','By priority']].forEach(([value,label])=>{
+  options.forEach(([value,label])=>{
     const b = document.createElement('button'); b.type='button'; b.textContent = label;
-    b.className = dueLayout===value ? 'on' : '';
-    b.onclick = ()=>{ dueLayout = value; localStorage.setItem('hoekie_due_layout', value); render(); };
+    b.className = current===value ? 'on' : '';
+    b.onclick = ()=>onPick(value);
     wrap.append(b);
   });
   return wrap;
+}
+function buildDueLayoutToggle(){
+  return buildLayoutToggle([['list','By date'],['priority','By priority']], dueLayout,
+    v=>{ dueLayout = v; localStorage.setItem('hoekie_due_layout', v); render(); });
+}
+function buildWorkLayoutToggle(){
+  return buildLayoutToggle([['due','By due date'],['planned','By planned date']], workLayout,
+    v=>{ workLayout = v; localStorage.setItem('hoekie_work_layout', v); render(); });
 }
 
 // Remembers how tall the sticky page header is, so things that stick just
@@ -1083,6 +1112,8 @@ function renderWorkProjects(main, list){
   });
   if(groups['']) names.push('');
 
+  if(workLayout==='planned'){ renderWorkPlanMatrix(main, groups, names, byDueDate); return; }
+
   names.forEach(name=>{
     const items = groups[name].sort(byDueDate);
     const group = document.createElement('div'); group.className='due-group';
@@ -1106,6 +1137,100 @@ function renderWorkProjects(main, list){
     group.append(cards);
     main.append(group);
   });
+}
+
+/* ---- "By planned date" layout of the Work by project page ------------
+   A grid: one ROW per project (same order as the other layout - the project
+   with the nearest deadline first, "No project" last) and one COLUMN per
+   planned date (earliest on the left, "No planned date" last). Inside a
+   cell the tasks are still sorted by due date. Drag a card sideways within
+   its project's row to change its planned date, or into the last column to
+   un-plan it. Cards can only be dropped in their OWN project's row, so
+   a drag can never move a task to another project by accident. A task
+   that spans several days sits in the column of its first day. */
+function renderWorkPlanMatrix(main, groups, names, byDueDate){
+  // The columns: every planned date that has a (visible) task, in order...
+  const dateSet = new Set();
+  let anyUnplanned = false;
+  names.forEach(n=>groups[n].forEach(t=>{ if(t.planned) dateSet.add(t.planned); else anyUnplanned = true; }));
+  const columns = [...dateSet].sort();
+  if(anyUnplanned) columns.push('');          // '' = "No planned date", always last
+
+  const today = todayStr();
+  const colInfo = date=>{
+    if(!date) return { title:'No planned date', rel:'', label:'No planned date' };
+    const diff = daysBetween(today, date);
+    const rel = diff<0 ? (-diff)+' day'+(diff===-1?'':'s')+' ago' : diff===0 ? 'today' : diff===1 ? 'tomorrow' : 'in '+diff+' days';
+    const yearNote = date.slice(0,4)!==today.slice(0,4) ? ' '+date.slice(0,4) : '';
+    const title = `${WEEKDAY_SHORT[weekdayOf(date)]} ${fmtDate(date)}${yearNote}`;
+    return { title, rel, label: title+' · '+rel };
+  };
+
+  const wrap = document.createElement('div'); wrap.className='plan-wrap';   // scrolls sideways if there are many dates
+  const matrix = document.createElement('div'); matrix.className='plan-matrix';
+  matrix.style.gridTemplateColumns = '140px repeat('+columns.length+', minmax(235px, 1fr))';
+
+  // Header row: an empty corner, then one label per date.
+  const corner = document.createElement('div'); corner.className='plan-corner';
+  matrix.append(corner);
+  columns.forEach(date=>{
+    const info = colInfo(date);
+    const head = document.createElement('div');
+    head.className = 'plan-col-head' + (date===today ? ' is-today' : '') + (date && date<today ? ' is-past' : '');
+    head.innerHTML = `<div class="plan-col-title">${info.title}</div>` + (info.rel ? `<div class="due-rel">${info.rel}</div>` : '');
+    matrix.append(head);
+  });
+
+  // One row per project.
+  names.forEach((name, rowIndex)=>{
+    const items = groups[name];
+    const first = rowIndex===0 ? ' first-row' : '';
+
+    const rowHead = document.createElement('div'); rowHead.className='plan-row-head'+first;
+    const chip = document.createElement('span'); chip.className = 'proj-chip' + (name ? '' : ' none');
+    chip.textContent = name || 'No project';
+    if(name){
+      const c = projectColors[name] || DEFAULT_PROJECT_COLOR;
+      chip.style.background = lighten(c, 0.82); chip.style.color = darken(c, 0.35);
+    }
+    const count = document.createElement('div'); count.className='due-rel';
+    count.textContent = items.length+(items.length===1?' task':' tasks');
+    rowHead.append(chip, count);
+    matrix.append(rowHead);
+
+    columns.forEach(date=>{
+      const cell = document.createElement('div'); cell.className='plan-cell'+first;
+      cell.dataset.project = name; cell.dataset.date = date; cell.dataset.label = colInfo(date).label;
+      const here = items.filter(t=>(t.planned||'')===date).sort(byDueDate);
+      if(here.length===0){
+        cell.classList.add('is-empty');
+        const e = document.createElement('div'); e.className='empty'; e.textContent='—';
+        cell.append(e);
+      } else {
+        here.forEach(t=>cell.append(taskCard(t)));
+      }
+
+      // Drop target: only accepts a card from the SAME project row.
+      makeDropZone(cell,
+        ()=>{ const t = tasks.find(x=>x.id===draggingId); return !!t && (t.project||'')===name; },
+        e=>{
+          const t = tasks.find(x=>x.id === (e.dataTransfer.getData('text/plain') || draggingId));
+          draggingId = null;
+          if(!t || (t.project||'')!==name || (t.planned||'')===date) return;
+          if(date){
+            skipTask(t, date);          // moves the planned date (keeping a multi-day task's length) and shows the Undo message
+          } else {
+            const before = snapshotTask(t);
+            t.planned = null; t.endDate = null;
+            persist(); render();
+            showToast('Unplanned "'+shortTitle(t.title)+'"', { label:'Undo', onClick: ()=>restoreTask(before) });
+          }
+        });
+      matrix.append(cell);
+    });
+  });
+  wrap.append(matrix);
+  main.append(wrap);
 }
 
 /* ================================================================
@@ -1239,7 +1364,7 @@ function render(){
   // tasks get squeezed while a lot of empty margin is left on both sides.
   main.classList.toggle('wide', view==='today' && meetingsOpen);
   // The Table tab has a lot of columns, so it gets the whole screen width.
-  main.classList.toggle('full', view==='all');
+  main.classList.toggle('full', view==='all' || (view==='work' && workLayout==='planned'));
   // The "By priority" grid on the Due dates page wants some extra room.
   main.classList.toggle('roomy', view==='due' && dueLayout==='priority');
   syncHeaderHeight();
@@ -1276,6 +1401,7 @@ function render(){
     chipsWrap.append(tb);
   }
   if(view==='due') chipsWrap.append(buildDueLayoutToggle());
+  if(view==='work') chipsWrap.append(buildWorkLayoutToggle());
   target.append(chipsWrap);
   renderFilterPicker(target);
 

@@ -150,6 +150,10 @@ table.tasktable input[type=checkbox]{min-width:auto;width:16px;height:16px;}
 main.full{max-width:none;padding-left:24px;padding-right:24px;}
 /* A roomy, easier-to-read title column. */
 table.tasktable input.tbl-title{width:100%;min-width:340px;font-size:14px;font-weight:600;padding:7px 10px;}
+/* title input + the pencil button that opens the edit panel */
+table.tasktable .title-cell{display:flex;align-items:center;gap:6px;}
+table.tasktable .title-cell input.tbl-title{flex:1;width:auto;min-width:310px;}
+table.tasktable .title-cell .icon-action{flex:none;}
 /* ...and it soaks up most of the spare width on a big screen (never less than 340px). */
 table.tasktable th.col-title{width:40%;}
 
@@ -280,4 +284,34 @@ main.roomy{max-width:1200px;}
   .due-cell::before{content:attr(data-label);display:block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-soft);margin:8px 0 4px;}
   .due-cell.is-empty{display:none;}
   .layout-toggle{margin-left:0;}
+}
+
+/* ============ Work by project page: "By planned date" layout ============
+   Rows = projects, columns = planned dates. If there are more dates than fit,
+   the grid scrolls sideways while the project names stay pinned on the left. */
+.plan-wrap{overflow-x:auto;padding-bottom:6px;}
+.plan-matrix{display:grid;align-items:start;}   /* the column widths are set from JS */
+.plan-corner,.plan-row-head{position:sticky;left:0;z-index:2;background:var(--paper);}
+.plan-corner,.plan-col-head{border-bottom:1px solid var(--line);}
+.plan-col-head{padding:8px 8px;}
+.plan-col-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;}
+.plan-col-head.is-today{background:rgba(34,48,58,.06);border-radius:10px 10px 0 0;}
+.plan-col-head.is-past .due-rel{color:var(--pr-high);}
+.plan-row-head,.plan-cell{padding:12px 8px 4px;border-top:1px solid var(--line);}
+.plan-row-head.first-row,.plan-cell.first-row{border-top:none;}
+.plan-cell{min-height:64px;}
+.plan-cell .task{margin-bottom:8px;}
+/* while dragging: faint outline on the cells the card may land in, strong one on the hovered cell */
+.plan-cell.can-drop{outline:1px dashed var(--ink-soft);outline-offset:-3px;}
+.plan-cell.drop-target{background:rgba(34,48,58,.07);outline:2px dashed var(--ink);outline-offset:-3px;}
+@media (max-width:760px){
+  /* Phone: no grid. Each project becomes a heading followed by its dated groups. */
+  .plan-wrap{overflow-x:visible;}
+  .plan-matrix{display:block;}
+  .plan-corner,.plan-col-head{display:none;}
+  .plan-row-head{position:static;margin-top:16px;padding:12px 0 2px;}
+  .plan-row-head.first-row{margin-top:0;}
+  .plan-cell{border-top:none;padding:0;min-height:0;}
+  .plan-cell::before{content:attr(data-label);display:block;font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--ink-soft);margin:8px 0 4px;}
+  .plan-cell.is-empty{display:none;}
 }
