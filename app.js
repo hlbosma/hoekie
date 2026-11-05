@@ -1017,7 +1017,9 @@ function renderDueMatrix(main, groups, dates){
 // those, the highlight would blink off whenever you drag across a card.
 function makeDropZone(el, isValid, onDrop){
   let depth = 0;
-  el.addEventListener('dragenter', e=>{ if(isValid()){ e.preventDefault(); depth++; } });
+  // Highlight the moment a card enters (not only on the next "dragover", which
+  // can lag a moment behind), so the target lights up immediately.
+  el.addEventListener('dragenter', e=>{ if(isValid()){ e.preventDefault(); depth++; el.classList.add('drop-target'); } });
   el.addEventListener('dragover',  e=>{ if(isValid()){ e.preventDefault(); el.classList.add('drop-target'); } });
   el.addEventListener('dragleave', ()=>{ depth = Math.max(0, depth-1); if(depth===0) el.classList.remove('drop-target'); });
   el.addEventListener('drop',      e=>{ e.preventDefault(); depth = 0; el.classList.remove('drop-target'); onDrop(e); });
@@ -1029,7 +1031,7 @@ function highlightDropRow(t){
   // Due dates grid: the cells of the card's own due-date row.
   if(t.due) document.querySelectorAll('.due-cell[data-date="'+t.due+'"]').forEach(c=>c.classList.add('can-drop'));
   // Work-by-planned-date grid: the cells of the card's own project row.
-  if(t.type==='work') document.querySelectorAll('.plan-cell').forEach(c=>{ if(c.dataset.project === (t.project||'')) c.classList.add('can-drop'); });
+  if(t.type==='work') document.querySelectorAll('.plan-cell').forEach(c=>{ if(c.dataset.project === (t.project||'') && c.dataset.kind!=='overdue') c.classList.add('can-drop'); });
 }
 function clearDropRows(){
   document.querySelectorAll('.due-cell.can-drop, .due-cell.drop-target, .plan-cell.can-drop, .plan-cell.drop-target')
@@ -1141,42 +1143,61 @@ function renderWorkProjects(main, list){
 
 /* ---- "By planned date" layout of the Work by project page ------------
    A grid: one ROW per project (same order as the other layout - the project
-   with the nearest deadline first, "No project" last) and one COLUMN per
-   planned date (earliest on the left, "No planned date" last). Inside a
-   cell the tasks are still sorted by due date. Drag a card sideways within
-   its project's row to change its planned date, or into the last column to
-   un-plan it. Cards can only be dropped in their OWN project's row, so
-   a drag can never move a task to another project by accident. A task
-   that spans several days sits in the column of its first day. */
+   with the nearest deadline first, "No project" last) and these COLUMNS:
+     Overdue          - ONE column for everything planned before today
+                        (only shown when there is something overdue)
+     Today            - always shown, so there's always somewhere to drop a
+                        task you want to do today
+     upcoming days    - one column per future date that has a task
+     No planned date  - last (only shown when there is such a task)
+   Inside a cell the tasks are still sorted by due date. Drag a card sideways
+   within its project's row to change its planned date (not into "Overdue" -
+   you can't plan something into the past), or into the last column to un-plan
+   it. Cards can only be dropped in their OWN project's row, so a drag can
+   never move a task to another project by accident. A task that spans
+   several days sits in the column of its first day. */
 function renderWorkPlanMatrix(main, groups, names, byDueDate){
-  // The columns: every planned date that has a (visible) task, in order...
-  const dateSet = new Set();
-  let anyUnplanned = false;
-  names.forEach(n=>groups[n].forEach(t=>{ if(t.planned) dateSet.add(t.planned); else anyUnplanned = true; }));
-  const columns = [...dateSet].sort();
-  if(anyUnplanned) columns.push('');          // '' = "No planned date", always last
-
   const today = todayStr();
-  const colInfo = date=>{
-    if(!date) return { title:'No planned date', rel:'', label:'No planned date' };
-    const diff = daysBetween(today, date);
-    const rel = diff<0 ? (-diff)+' day'+(diff===-1?'':'s')+' ago' : diff===0 ? 'today' : diff===1 ? 'tomorrow' : 'in '+diff+' days';
-    const yearNote = date.slice(0,4)!==today.slice(0,4) ? ' '+date.slice(0,4) : '';
-    const title = `${WEEKDAY_SHORT[weekdayOf(date)]} ${fmtDate(date)}${yearNote}`;
-    return { title, rel, label: title+' · '+rel };
+  const OVERDUE = 'overdue';   // the key of the single column for everything planned before today
+  // Which column does a task belong to? ('' = no planned date)
+  const columnOf = t => !t.planned ? '' : t.planned < today ? OVERDUE : t.planned;
+
+  // Work out the columns: Overdue (only if needed), Today (always), then each
+  // upcoming date that has a task, then "No planned date" (only if needed).
+  const dateSet = new Set([today]);
+  let anyOverdue = false, anyUnplanned = false;
+  names.forEach(n=>groups[n].forEach(t=>{
+    const k = columnOf(t);
+    if(k==='') anyUnplanned = true; else if(k===OVERDUE) anyOverdue = true; else dateSet.add(k);
+  }));
+  const columns = [];
+  if(anyOverdue) columns.push(OVERDUE);
+  columns.push(...[...dateSet].sort());      // today is the earliest of these, so it comes first
+  if(anyUnplanned) columns.push('');
+
+  // The label shown at the top of a column (and, on a phone, above its cards).
+  const colInfo = key=>{
+    if(key==='') return { title:'No planned date', rel:'', label:'No planned date' };
+    if(key===OVERDUE) return { title:'Overdue', rel:'planned before today', label:'Overdue' };
+    const diff = daysBetween(today, key);
+    const yearNote = key.slice(0,4)!==today.slice(0,4) ? ' '+key.slice(0,4) : '';
+    const dayText = `${WEEKDAY_SHORT[weekdayOf(key)]} ${fmtDate(key)}${yearNote}`;
+    if(diff===0) return { title:'Today', rel:dayText, label:'Today · '+dayText };
+    const rel = diff===1 ? 'tomorrow' : 'in '+diff+' days';
+    return { title:dayText, rel, label:dayText+' · '+rel };
   };
 
   const wrap = document.createElement('div'); wrap.className='plan-wrap';   // scrolls sideways if there are many dates
   const matrix = document.createElement('div'); matrix.className='plan-matrix';
   matrix.style.gridTemplateColumns = '140px repeat('+columns.length+', minmax(235px, 1fr))';
 
-  // Header row: an empty corner, then one label per date.
+  // Header row: an empty corner, then one label per column.
   const corner = document.createElement('div'); corner.className='plan-corner';
   matrix.append(corner);
-  columns.forEach(date=>{
-    const info = colInfo(date);
+  columns.forEach(key=>{
+    const info = colInfo(key);
     const head = document.createElement('div');
-    head.className = 'plan-col-head' + (date===today ? ' is-today' : '') + (date && date<today ? ' is-past' : '');
+    head.className = 'plan-col-head' + (key===today ? ' is-today' : '') + (key===OVERDUE ? ' is-past' : '');
     head.innerHTML = `<div class="plan-col-title">${info.title}</div>` + (info.rel ? `<div class="due-rel">${info.rel}</div>` : '');
     matrix.append(head);
   });
@@ -1198,10 +1219,11 @@ function renderWorkPlanMatrix(main, groups, names, byDueDate){
     rowHead.append(chip, count);
     matrix.append(rowHead);
 
-    columns.forEach(date=>{
+    columns.forEach(key=>{
       const cell = document.createElement('div'); cell.className='plan-cell'+first;
-      cell.dataset.project = name; cell.dataset.date = date; cell.dataset.label = colInfo(date).label;
-      const here = items.filter(t=>(t.planned||'')===date).sort(byDueDate);
+      cell.dataset.project = name; cell.dataset.date = key; cell.dataset.label = colInfo(key).label;
+      cell.dataset.kind = key==='' ? 'none' : key===OVERDUE ? 'overdue' : 'date';
+      const here = items.filter(t=>columnOf(t)===key).sort(byDueDate);
       if(here.length===0){
         cell.classList.add('is-empty');
         const e = document.createElement('div'); e.className='empty'; e.textContent='—';
@@ -1210,15 +1232,16 @@ function renderWorkPlanMatrix(main, groups, names, byDueDate){
         here.forEach(t=>cell.append(taskCard(t)));
       }
 
-      // Drop target: only accepts a card from the SAME project row.
+      // Drop target: only accepts a card from the SAME project row, and never
+      // the "Overdue" column (that one is for looking at, not for planning into).
       makeDropZone(cell,
-        ()=>{ const t = tasks.find(x=>x.id===draggingId); return !!t && (t.project||'')===name; },
+        ()=>{ if(key===OVERDUE) return false; const t = tasks.find(x=>x.id===draggingId); return !!t && (t.project||'')===name; },
         e=>{
           const t = tasks.find(x=>x.id === (e.dataTransfer.getData('text/plain') || draggingId));
           draggingId = null;
-          if(!t || (t.project||'')!==name || (t.planned||'')===date) return;
-          if(date){
-            skipTask(t, date);          // moves the planned date (keeping a multi-day task's length) and shows the Undo message
+          if(key===OVERDUE || !t || (t.project||'')!==name || columnOf(t)===key) return;
+          if(key){
+            skipTask(t, key);           // moves the planned date (keeping a multi-day task's length) and shows the Undo message
           } else {
             const before = snapshotTask(t);
             t.planned = null; t.endDate = null;
@@ -1348,6 +1371,14 @@ function buildMeetingsPanel(){
 
 function render(){
   useFiltersFor(view);   // from here on, "filters" means THIS page's filters
+  // IMPORTANT: measuring the header makes the browser recalculate the page
+  // layout on the spot. That must happen HERE, while the page is still full of
+  // content - if it happened after main is emptied (a few lines down), the
+  // page would momentarily be short, the browser would reset your scroll
+  // position to the top, and every tap on a star or "in progress" would throw
+  // you back to the top of the page. So: no measuring between clearing "main"
+  // and rebuilding it.
+  syncHeaderHeight();
   document.querySelectorAll('nav button[data-view]').forEach(b=>{
     const on = b.dataset.view===view;
     b.classList.toggle('active', on);
@@ -1367,7 +1398,6 @@ function render(){
   main.classList.toggle('full', view==='all' || (view==='work' && workLayout==='planned'));
   // The "By priority" grid on the Due dates page wants some extra room.
   main.classList.toggle('roomy', view==='due' && dueLayout==='priority');
-  syncHeaderHeight();
   if(view==='archive'){ renderArchive(main); return; }
   if(view==='quick'){ renderQuick(main); return; }
   if(view==='tags'){ renderTags(main); return; }
