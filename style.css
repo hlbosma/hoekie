@@ -315,3 +315,9 @@ main.roomy{max-width:1200px;}
   .plan-cell::before{content:attr(data-label);display:block;font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--ink-soft);margin:8px 0 4px;}
   .plan-cell.is-empty{display:none;}
 }
+
+/* Tag filter panel: a "show" row and a "hide" row of tag chips */
+.filter-section{margin-bottom:12px;}
+.filter-section-head{font-size:12px;font-weight:700;}
+/* the red count on the Quick tab, now a quieter (secondary) tab: tuck it into the corner */
+.tab-secondary .badge{top:2px;right:-3px;}

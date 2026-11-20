@@ -51,16 +51,16 @@
     </div>
   </div>
 
-  <!-- The page tabs. Two groups: the pages you use most (big, bold) on the
-       left, then a divider, then the rest (smaller, quieter). -->
+  <!-- The page tabs. Two groups: the main pages (Today, Due, Work - big and bold)
+       on the left, then a divider, then the rest (smaller, quieter). -->
   <nav class="tabs" role="tablist">
     <button class="tab tab-primary active" data-view="today" role="tab">Today</button>
-    <button class="tab tab-primary" data-view="due" role="tab">Due dates</button>
-    <button class="tab tab-primary" data-view="quick" role="tab">Quick<span class="badge" id="quickBadge" style="display:none"></span></button>
+    <button class="tab tab-primary" data-view="due" role="tab">Due</button>
+    <button class="tab tab-primary" data-view="work" role="tab">Work</button>
     <span class="tab-divider"></span>
+    <button class="tab tab-secondary" data-view="quick" role="tab">Quick<span class="badge" id="quickBadge" style="display:none"></span></button>
     <button class="tab tab-secondary" data-view="later" role="tab">All tasks</button>
     <button class="tab tab-secondary" data-view="all" role="tab">Table</button>
-    <button class="tab tab-secondary" data-view="work" role="tab">Work by project</button>
     <button class="tab tab-secondary" data-view="tags" role="tab">Tags & Projects</button>
     <button class="tab tab-secondary" data-view="archive" role="tab">Archive</button>
   </nav>

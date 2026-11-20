@@ -75,8 +75,11 @@ let skipOpenId = null;
    per page.
    ================================================================ */
 function newFilters(){
-  return { favoritesOnly:false, showDone:false, hideWork:false, projects:[], projectMode:'show',
-           labels:[], labelMode:'show', simpleView:false, unplannedOnly:false,
+  // Projects: ONE list, which is either "show only these" or "hide these".
+  // Tags: TWO separate lists at once - "show" and "hide" - so you can say
+  // "show everything with tag X, but hide everything with tag Y".
+  return { favoritesOnly:false, hideWork:false, projects:[], projectMode:'show',
+           labelsShow:[], labelsHide:[], simpleView:false, unplannedOnly:false,
            openPicker:null /* 'project' | 'label' | null */ };
 }
 const filtersByView = {};   // { today: {...}, later: {...}, all: {...}, due: {...}, work: {...} }
@@ -345,16 +348,12 @@ function isTodayOrOverdue(t){ return !!t.planned && t.planned<=todayStr(); }
 function isUnscheduled(t){ return !t.planned; }
 
 /* ================================================================
-   SHOWING/HIDING FINISHED TASKS - rebuilt to work exactly like the
-   favorites filter, since that one has proven reliable: a single
-   boolean on the task (t.done), checked directly against a single
-   boolean filter (filters.showDone), nothing else involved. Earlier
-   versions tried to keep a just-finished task visible a little
-   longer as a grace period, using dates or session memory - that
-   extra logic was the actual source of the recurring bugs. Removing
-   it means checking a task off now hides it immediately when "Show
-   done" is off, same as unstarring a task hides it immediately when
-   "Favorites" is on - consistent, simple, and easy to reason about.
+   FINISHED TASKS
+   A task you check off disappears from every page straight away (see
+   passesFilters: "if(t.done) return false"). It then lives only in the
+   Archive - where you can Restore or Delete it - and is removed for good
+   ARCHIVE_DAYS days after you finished it. There is deliberately no
+   "show finished tasks" switch on the pages any more.
    ================================================================ */
 /* ---- Undo helpers -----------------------------------------------------
    Before an action changes a task, we keep a plain copy of how it looked
@@ -438,25 +437,24 @@ function skipTask(t, newDate){
 function projectList(){ return [...new Set(tasks.filter(t=>t.type==='work' && t.project).map(t=>t.project))]; }
 function labelList(){ const s=new Set(); tasks.forEach(t=>(t.labels||[]).forEach(l=>s.add(l))); return [...s]; }
 
-// Same shape as the favorites check below: one flag on the task,
-// one filter flag, compared directly. Projects/labels now support
-// picking several at once, either as a "show only these" list or a
-// "hide these" list.
+// Decides whether a task is shown on the current page, given that page's filters.
 function passesFilters(t){
+  if(t.done) return false;          // finished tasks only live in the Archive
+  // Projects: one list, used either as "show only these" or "hide these".
   if(filters.projects.length){
     const match = filters.projects.includes(t.project);
     if(filters.projectMode==='show' && !match) return false;
     if(filters.projectMode==='hide' && match) return false;
   }
-  if(filters.labels.length){
-    const match = (t.labels||[]).some(l=>filters.labels.includes(l));
-    if(filters.labelMode==='show' && !match) return false;
-    if(filters.labelMode==='hide' && match) return false;
-  }
+  // Tags: two independent lists that both apply.
+  const tags = t.labels || [];
+  //  - "show": the task needs at least ONE of these tags (when the list isn't empty)
+  if(filters.labelsShow.length && !tags.some(l=>filters.labelsShow.includes(l))) return false;
+  //  - "hide": the task must have NONE of these tags
+  if(filters.labelsHide.length && tags.some(l=>filters.labelsHide.includes(l))) return false;
   if(filters.favoritesOnly && !t.favorite) return false;
   if(filters.hideWork && t.type==='work') return false;
   if(filters.unplannedOnly && t.planned) return false;
-  if(t.done && !filters.showDone) return false;
   return true;
 }
 function recurLabel(t){
@@ -604,52 +602,61 @@ function taskCard(t){
 function renderFilterChips(container){
   const mk=(label,active,onClick)=>{const c=document.createElement('button');c.className='chip'+(active?' on':'');c.textContent=label;c.onclick=onClick;return c;};
   container.append(mk('⭐ Favorites', filters.favoritesOnly, ()=>{filters.favoritesOnly=!filters.favoritesOnly; render();}));
+  // (There's no "show finished tasks" chip any more: finished tasks only live in the Archive.)
   // The on/off wording stays the same either way - only the checkmark and
   // the chip's own highlight change - so it's never ambiguous which state you're in.
-  container.append(mk((filters.showDone?'✓ ':'')+'Show finished tasks', filters.showDone, ()=>{filters.showDone=!filters.showDone; render();}));
   // Hides every task of the "Work" type (and, on the board, the Work column too).
   container.append(mk((filters.hideWork?'✓ ':'')+'Hide work tasks', filters.hideWork, ()=>{filters.hideWork=!filters.hideWork; render();}));
   const projLabel = 'Projects' + (filters.projects.length ? ` (${filters.projects.length})` : '');
   container.append(mk(projLabel, filters.projects.length>0 || filters.openPicker==='project', ()=>{ filters.openPicker = filters.openPicker==='project'?null:'project'; render(); }));
-  const tagLabel = 'Tags' + (filters.labels.length ? ` (${filters.labels.length})` : '');
-  container.append(mk(tagLabel, filters.labels.length>0 || filters.openPicker==='label', ()=>{ filters.openPicker = filters.openPicker==='label'?null:'label'; render(); }));
+  // The Tags button shows how many tags are being SHOWN (+) and HIDDEN (−), e.g. "Tags (+1 −2)".
+  const nShow = filters.labelsShow.length, nHide = filters.labelsHide.length;
+  const tagParts = []; if(nShow) tagParts.push('+'+nShow); if(nHide) tagParts.push('−'+nHide);
+  const tagLabel = 'Tags' + (tagParts.length ? ' ('+tagParts.join(' ')+')' : '');
+  container.append(mk(tagLabel, nShow+nHide>0 || filters.openPicker==='label', ()=>{ filters.openPicker = filters.openPicker==='label'?null:'label'; render(); }));
   container.append(mk('No planned date', filters.unplannedOnly, ()=>{ filters.unplannedOnly=!filters.unplannedOnly; render(); }));
   container.append(mk('Simple view', filters.simpleView, ()=>{ filters.simpleView=!filters.simpleView; render(); }));
 }
 
-// The expandable panel that opens under the Projects/Tags buttons: pick
-// any number of projects or tags, and choose whether that list means
-// "only show tasks with these" or "hide tasks with these".
+// The expandable panel that opens under the Projects / Tags buttons.
+//  - Projects: pick any number, and choose whether that list means "only show
+//    tasks in these" or "hide tasks in these".
+//  - Tags: two separate rows, one for tags to SHOW and one for tags to HIDE,
+//    both at the same time.
 function renderFilterPicker(main){
   if(!filters.openPicker) return;
-  const isProj = filters.openPicker==='project';
-  const items = isProj ? projectList() : labelList();
-  const selected = isProj ? filters.projects : filters.labels;
-  const modeKey = isProj ? 'projectMode' : 'labelMode';
-
   const wrap = document.createElement('div'); wrap.className='filter-picker';
+  if(filters.openPicker==='project') fillProjectPicker(wrap); else fillTagPicker(wrap);
+  main.append(wrap);
+}
+
+// Show selected = green ("include"), Hide selected = red ("exclude").
+const MODE_HEX = { show: '#849E15', hide: '#D8560E' };
+
+function fillProjectPicker(wrap){
+  const items = projectList();
+  const selected = filters.projects;
+
   const modeRow = document.createElement('div'); modeRow.className='mode-toggle'; modeRow.style.marginBottom='10px';
-  // Show selected = green ("include"), Hide selected = red ("exclude") - only when active.
-  const MODE_HEX = { show: '#849E15', hide: '#D8560E' };
   [['show','Show selected'],['hide','Hide selected']].forEach(([m,label])=>{
     const b = document.createElement('button'); b.type='button'; b.textContent=label; b.className='pick-chip';
-    if(filters[modeKey]===m){ b.style.background=MODE_HEX[m]; b.style.borderColor=MODE_HEX[m]; b.style.color='#fff'; }
-    b.onclick = ()=>{ filters[modeKey]=m; render(); };
+    if(filters.projectMode===m){ b.style.background=MODE_HEX[m]; b.style.borderColor=MODE_HEX[m]; b.style.color='#fff'; }
+    b.onclick = ()=>{ filters.projectMode=m; render(); };
     modeRow.append(b);
   });
   wrap.append(modeRow);
 
   if(items.length===0){
-    const e=document.createElement('div'); e.className='empty'; e.textContent = isProj?'No projects yet.':'No tags yet.';
+    const e=document.createElement('div'); e.className='empty'; e.textContent='No projects yet.';
     wrap.append(e);
   } else {
     const chipsRow = document.createElement('div'); chipsRow.className='chip-row';
     items.forEach(it=>{
       const c = document.createElement('button'); c.type='button'; c.className='pick-chip';
-      c.textContent = isProj ? it : '#'+it;
-      // Selected chips use the item's OWN assigned color, not one generic color for everything.
+      c.textContent = it;
+      // Selected chips use the project's OWN assigned color.
       if(selected.includes(it)){
-        const hex = isProj ? (projectColors[it]||DEFAULT_PROJECT_COLOR) : (labelColors[it]||DEFAULT_LABEL_COLOR);
+        const hex = projectColors[it]||DEFAULT_PROJECT_COLOR;
         c.style.background = hex; c.style.borderColor = hex; c.style.color = '#fff';
       }
       c.onclick = ()=>{
@@ -666,7 +673,52 @@ function renderFilterPicker(main){
     clear.onclick = ()=>{ selected.length=0; render(); };
     wrap.append(clear);
   }
-  main.append(wrap);
+}
+
+function fillTagPicker(wrap){
+  const tags = labelList();
+  if(tags.length===0){
+    const e=document.createElement('div'); e.className='empty'; e.textContent='No tags yet.';
+    wrap.append(e);
+    return;
+  }
+  // One labelled row of tag chips per list. Clicking a tag adds it to that
+  // row's list (or removes it again). A tag can only be in one list at a
+  // time, so adding it to one automatically takes it out of the other.
+  const section = (kind, heading, list, otherList)=>{
+    const box = document.createElement('div'); box.className='filter-section';
+    const head = document.createElement('div'); head.className='filter-section-head';
+    head.textContent = heading; head.style.color = MODE_HEX[kind];
+    const chips = document.createElement('div'); chips.className='chip-row';
+    tags.forEach(tag=>{
+      const c = document.createElement('button'); c.type='button'; c.className='pick-chip';
+      c.textContent = '#'+tag;
+      if(list.includes(tag)){
+        // The tag's own colour as fill, plus a ring in the list's colour
+        // (green = shown, red = hidden, with the text crossed out).
+        const hex = labelColors[tag]||DEFAULT_LABEL_COLOR;
+        c.style.background = hex; c.style.borderColor = hex; c.style.color = '#fff';
+        c.style.boxShadow = '0 0 0 2px '+MODE_HEX[kind];
+        if(kind==='hide') c.style.textDecoration = 'line-through';
+      }
+      c.onclick = ()=>{
+        const i = list.indexOf(tag);
+        if(i>-1) list.splice(i,1);
+        else { list.push(tag); const j = otherList.indexOf(tag); if(j>-1) otherList.splice(j,1); }
+        render();
+      };
+      chips.append(c);
+    });
+    box.append(head, chips);
+    return box;
+  };
+  wrap.append(section('show', 'Show only tasks with these tags', filters.labelsShow, filters.labelsHide));
+  wrap.append(section('hide', 'Hide tasks with these tags',      filters.labelsHide, filters.labelsShow));
+  if(filters.labelsShow.length || filters.labelsHide.length){
+    const clear = document.createElement('button'); clear.className='plan-btn'; clear.style.marginTop='4px'; clear.textContent='Clear';
+    clear.onclick = ()=>{ filters.labelsShow.length = 0; filters.labelsHide.length = 0; render(); };
+    wrap.append(clear);
+  }
 }
 function renderBoard(main, list){
   PRIORITY_ORDER.forEach(pr=>{
@@ -826,9 +878,19 @@ function renderArchive(main){
     const row = document.createElement('div'); row.className='archive-row';
     const info = document.createElement('div'); info.className='info';
     info.innerHTML = `<div class="title">${t.title}</div><div class="date">Finished ${fmtDate(t.completedAt)}</div>`;
+    // Finished tasks no longer show on the other pages, so this is where you
+    // bring one back if you ticked it off by mistake.
+    const restore = document.createElement('button'); restore.className='plan-btn'; restore.textContent='Restore';
+    restore.title = 'Put this task back on your lists, unfinished';
+    restore.onclick = ()=>{
+      const before = snapshotTask(t);
+      t.done = false; t.completedAt = null;
+      persist(); render();
+      showToast('Restored "'+shortTitle(t.title)+'"', { label:'Undo', onClick: ()=>restoreTask(before) });
+    };
     const del = document.createElement('button'); del.className='del-btn'; del.textContent='Delete';
     del.onclick = ()=>deleteTaskWithUndo(t);
-    row.append(info, del);
+    row.append(info, restore, del);
     main.append(row);
   });
 }
@@ -851,7 +913,9 @@ function renderTags(main){
     let chosenColor = projectColors[p]||DEFAULT_PROJECT_COLOR;
     const row = document.createElement('div'); row.className='tp-row';
     const nameInput = document.createElement('input'); nameInput.type='text'; nameInput.value=p;
-    const swatches = swatchPicker(chosenColor, hex=>{ chosenColor=hex; row.replaceChild(swatchPicker(chosenColor, arguments.callee), row.children[1]); });
+    // Redraw the swatches with the new one highlighted (the same approach the tag rows below use).
+    function refreshSwatches(){ const sw = swatchPicker(chosenColor, hex=>{ chosenColor=hex; refreshSwatches(); }); row.replaceChild(sw, row.children[1]); }
+    const swatches = swatchPicker(chosenColor, hex=>{ chosenColor=hex; refreshSwatches(); });
     const saveBtn = document.createElement('button'); saveBtn.className='plan-btn'; saveBtn.textContent='Save';
     saveBtn.onclick = ()=>{
       const newName = nameInput.value.trim() || p;
